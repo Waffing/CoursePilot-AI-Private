@@ -1,0 +1,91 @@
+{
+  "date": "2026-11-10",
+  "timezone": "Asia/Shanghai",
+  "version": "0.2.9.0",
+  "artifact": {
+    "file": "coursepilot-ai.jcedutec.user.js",
+    "bytes": 334022,
+    "sha256": "B583C4C39C80FCFF9CC7329BD2A990E8000A3201CECACC509D6D1966841FCE36"
+  },
+  "original": {
+    "file": "original.0.2.8.2.user.js",
+    "bytes": 306989,
+    "sha256": "A36B443548F96862E73AE624E0455E4ADBCB3C46B6778571A55CA61D1F39C5DE",
+    "unchangedFromAttachment": true
+  },
+  "scope": {
+    "host": "bbgu.jcedutec.cn",
+    "pages": [
+      "/students/courseDetail",
+      "/students/practice"
+    ],
+    "features": [
+      "normal-playback",
+      "muted-autoplay",
+      "single-choice",
+      "multiple-choice",
+      "judgement",
+      "multimodal-images",
+      "native-submit",
+      "native-practice-next",
+      "finish-receipt-gated-video-next",
+      "cancel-on-navigation-or-disable"
+    ]
+  },
+  "checks": {
+    "javascriptSyntax": "passed",
+    "total": 59,
+    "passed": 59,
+    "failed": 0,
+    "suites": [
+      {
+        "name": "model-regression",
+        "passed": 42,
+        "file": "work/model-regression.test.cjs"
+      },
+      {
+        "name": "jcedutec-browser",
+        "passed": 14,
+        "file": "work/jcedutec.test.cjs"
+      },
+      {
+        "name": "full-runtime",
+        "passed": 3,
+        "file": "work/full-runtime.test.cjs"
+      }
+    ]
+  },
+  "testEnvironment": {
+    "browser": "Microsoft Edge, independent headless test contexts",
+    "componentFixtures": "Original public compiled courseDetail and practice Vue components, Vue 2.6.14, Ant Design Vue 1.7.8",
+    "fullScriptDependencies": "Original userscript pinned Vue 3, Vue Demi, Pinia, Element Plus, RxJS and MD5",
+    "frontendOrigin": "http://bbgu.jcedutec.cn:8932",
+    "backendBase": "http://bbgu.jcedutec.cn:8930/jeecg-boot",
+    "backendResponses": "Mocked locally by browser routing; no real learning-record writes",
+    "modelResponses": "Synthetic API-compatible responses; no real provider calls or charges"
+  },
+  "publicComponentSources": [
+    {
+      "url": "http://bbgu.jcedutec.cn:8932/js/chunk-f6f26b8c.898ab1a7.js",
+      "sha256": "F3ADF8F900AB3A2BB6F1E1C07D6F87CCFFA2BDC1C3FC26C5A2B62C57C3542EDF"
+    },
+    {
+      "url": "http://bbgu.jcedutec.cn:8932/js/chunk-195985d8.35bfa310.js",
+      "sha256": "3FEB2503484950A3045D0288EA41D7C191C55607B79A0D8A0C349B14D712CE04"
+    }
+  ],
+  "liveAcceptance": {
+    "authenticatedEdgeSessionAttached": false,
+    "userscriptInstalledInExistingEdge": false,
+    "realModelServiceVerified": false,
+    "realCoursePopupSubmitted": false,
+    "realLearningRecordVerified": false,
+    "blocker": "Computer Use native pipe unavailable; existing Edge process does not expose a CDP endpoint"
+  },
+  "limitations": [
+    "Video and question-bank practice pages only; formal exams and dailyPractice are outside this adaptation",
+    "Image questions require a multimodal model configured by the user",
+    "CAPTCHA and authentication prompts need manual handling",
+    "Future website component or API changes require revalidation"
+  ]
+}

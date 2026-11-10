@@ -1,0 +1,109 @@
+{
+  "version": "0.2.9.5",
+  "artifact": {
+    "file": "course-helper.user.js",
+    "bytes": 389721,
+    "sha256": "4D34A74952A59A9FF70A9222AD2670C818058EEB5683A9042116137FE39C9817"
+  },
+  "checks": {
+    "javascriptSyntax": "passed",
+    "total": 109,
+    "passed": 109,
+    "failed": 0,
+    "skipped": 0,
+    "suites": {
+      "exam.test.cjs": 6,
+      "full-runtime.test.cjs": 13,
+      "jcedutec.test.cjs": 14,
+      "model-regression.test.cjs": 45,
+      "preferences.test.cjs": 8,
+      "v291.test.cjs": 12,
+      "video-speed.test.cjs": 11
+    }
+  },
+  "environment": {
+    "browser": "Edge",
+    "version": "157.0.4341.42",
+    "platform": "win32",
+    "node": "v24.18.0",
+    "mode": "isolated-headless",
+    "installedBrowserTest": false
+  },
+  "rollback": {
+    "file": "0.2.9.4/course-helper.user.js",
+    "sha256": "077E59249178478332912398D1CC0A3EBE135BFFB2D90CA7D25279FFEB290AB4",
+    "verifiedUnchanged": true
+  },
+  "preserved": [
+    "metadata name",
+    "namespace noshuang",
+    "model storage keys",
+    "Chaoxing handlers",
+    "Zhihuishu handlers",
+    "legacy disabled state",
+    "video speed selection",
+    "submission receipt protection"
+  ],
+  "personalization": {
+    "theme": "system",
+    "density": "comfortable",
+    "fontSize": 13,
+    "panelWidth": 360,
+    "opacity": 100,
+    "requestInterval": 5,
+    "actionDelay": 3
+  },
+  "requestControl": {
+    "minimumSeconds": 2,
+    "defaultSeconds": 5,
+    "scope": "automatic model, search and image calls in added-site workflow",
+    "sequentialImages": true,
+    "automaticRetry": false,
+    "temporaryFailureCooldownSeconds": [
+      15,
+      30,
+      60,
+      120,
+      240,
+      300
+    ],
+    "retryAfterFormats": [
+      "seconds",
+      "HTTP date"
+    ],
+    "crossTabCoordination": false
+  },
+  "interface": {
+    "themes": [
+      "system",
+      "light",
+      "dark"
+    ],
+    "dragAndMinimize": "passed",
+    "minimumViewportTested": [
+      320,
+      400
+    ],
+    "scaledViewportTested": true,
+    "maximumFontTested": 18,
+    "internalScrolling": true
+  },
+  "liveAcceptance": {
+    "realProviderCalls": false,
+    "authenticatedWebsiteSubmission": false,
+    "antiDetectionGuarantee": false,
+    "status": "isolated component and mocked-response tests only"
+  },
+  "installation": {
+    "requested": true,
+    "confirmed": false,
+    "detailFile": "安装状态-0.2.9.5.md",
+    "desktopError": "Computer Use native pipe is unavailable (os error 2)",
+    "url": "http://127.0.0.1:22901/",
+    "browserLaunchRequested": true,
+    "servedSha256": "4D34A74952A59A9FF70A9222AD2670C818058EEB5683A9042116137FE39C9817",
+    "time": "2026-11-10T22:30:02.4234363+08:00",
+    "scriptInstallUrl": "http://127.0.0.1:22901/course-helper.user.js",
+    "scriptNavigationRequested": true
+  }
+}

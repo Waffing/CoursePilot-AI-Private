@@ -1,0 +1,135 @@
+{
+  "version": "0.2.9.4",
+  "date": "2026-11-10",
+  "timezone": "Asia/Shanghai",
+  "artifact": {
+    "file": "course-helper.user.js",
+    "bytes": 369474,
+    "sha256": "077E59249178478332912398D1CC0A3EBE135BFFB2D90CA7D25279FFEB290AB4"
+  },
+  "preservedVersion": {
+    "version": "0.2.9.3",
+    "file": "0.2.9.3/course-helper.user.js",
+    "sha256": "271E1EF54EACE5C8B9506B984333374B23C8DE032CD48E036995387EFFCFE94A",
+    "unchanged": true
+  },
+  "checks": {
+    "javascriptSyntax": "passed",
+    "total": 95,
+    "passed": 95,
+    "failed": 0,
+    "skipped": 0,
+    "suites": {
+      "exam.test.cjs": 6,
+      "full-runtime.test.cjs": 9,
+      "jcedutec.test.cjs": 14,
+      "model-regression.test.cjs": 43,
+      "v291.test.cjs": 12,
+      "video-speed.test.cjs": 11
+    },
+    "results": "检查记录-0.2.9.4.txt"
+  },
+  "compatibility": {
+    "metadataNameAndNamespacePreserved": true,
+    "legacyQuestionAndVideoHandlersBytePreserved": true,
+    "legacyPlatformGetsNoNewControllerOrToolbarOrLayoutRules": true,
+    "modelStorageKeysPreserved": true,
+    "legacyDisabledSettingMigratedWithoutEnabling": true,
+    "dependenciesAdded": false
+  },
+  "features": [
+    "neutral-branding",
+    "pause-helper-and-video",
+    "retry-failed-current-question",
+    "receipt-status",
+    "verification-cancels-pending-input",
+    "bfcache-restoration",
+    "single-scheduler",
+    "100-entry-session-text-cache",
+    "model-change-and-wrong-feedback-cache-invalidation",
+    "buffer-and-receipt-timeout-hints",
+    "viewport-bounded-panel",
+    "automatic-player-speed",
+    "formal-and-mock-exam-native-answer-and-submission",
+    "detected-or-fallback-selectable-video-speed"
+  ],
+  "defaults": {
+    "automaticAnswersAndSubmission": true,
+    "mutedPlayback": true,
+    "bufferWarningSeconds": 30,
+    "receiptWarningSeconds": 15,
+    "cacheEntries": 100,
+    "imageCache": false,
+    "cachePersistence": "memory-only for current page session",
+    "automaticSpeed": true,
+    "preferredVideoRate": 0
+  },
+  "testEnvironment": {
+    "browser": "Independent headless Edge contexts",
+    "components": "Original published courseDetail and practice components with Vue 2 and Ant Design Vue",
+    "fullScriptDependencies": "Original pinned Vue 3, Vue Demi, Pinia, Element Plus, RxJS and MD5",
+    "backendAndModelResponses": "Mocked; no real learning-record writes or provider charges",
+    "layoutChecks": "900x650, 480x550 and 600x550 with device scale factor 1.25",
+    "nativePlaybackTest": "Locally generated WebM decoded and played by real Edge HTMLVideoElement; real clock measurement"
+  },
+  "installation": {
+    "performedThisTurn": false,
+    "existingBrowserModifiedThisTurn": false,
+    "previousInstallationConfirmed": false
+  },
+  "liveAcceptance": {
+    "authenticatedBrowserAttached": false,
+    "realCourseSubmissionPerformedThisTurn": false,
+    "realProviderCallsPerformedThisTurn": false,
+    "status": "Only standalone artifacts and isolated browser tests were produced; prior live installation remains unverified"
+  },
+  "scope": {
+    "pages": [
+      "/students/courseDetail",
+      "/students/practice",
+      "/students/questionList"
+    ],
+    "formalAndMockExamAdapters": true,
+    "dailyPracticeAdapter": false
+  },
+  "automaticSpeed": {
+    "enabledDefault": true,
+    "selectionDefault": "automatic-highest",
+    "readCurrentPlaybackRateFirst": true,
+    "detectedRatesUsedForOptions": true,
+    "fallbackRates": [
+      1,
+      1.5,
+      2
+    ],
+    "preferredRateStoredInExistingConfig": "视频倍速档位（0为自动）",
+    "manualPlayerChangesPreserved": true,
+    "appliesAcrossVideoChanges": true,
+    "websiteOrNativeControls": "Prefer original player menu clicks or select change; native video uses playbackRate",
+    "noSeekingOrProgressWrites": true,
+    "realNativePlaybackMeasurement": {
+      "rate": 2,
+      "elapsed": 0.403,
+      "advanced": 0.8061,
+      "ratio": 2.0002481389578164,
+      "nativeControls": true,
+      "scriptAccessibleShadow": false
+    }
+  },
+  "examBehavior": {
+    "automaticAttemptStart": false,
+    "nativePerQuestionAnswerSaveVerified": true,
+    "fullPaperCheckedBeforeSubmission": true,
+    "nativeSubmitAndConfirmation": true,
+    "noRepeatSubmission": true,
+    "websiteCountdownPreserved": true,
+    "mouseLeaveHandlersPreserved": true,
+    "signedCommitmentAutomated": false,
+    "verificationAndPauseStopInput": true
+  },
+  "examSource": {
+    "file": "chunk-60193644.js",
+    "currentPublicSourceHashMatchesFixture": true,
+    "sha256": "AC9D2D6991C2DC425F8354A712559C76D45C0DDDBC7AE1CC365A90C5A70A19CD"
+  }
+}
