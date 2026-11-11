@@ -1,0 +1,19 @@
+{
+  "sourceCount": 2,
+  "starts": [
+    {
+      "sourceIndex": 0,
+      "metadataToPlayMs": 2,
+      "readyState": 4
+    },
+    {
+      "sourceIndex": 1,
+      "metadataToPlayMs": 41.5,
+      "readyState": 4
+    }
+  ],
+  "secondVideoTime": 0.0945,
+  "rate": 2,
+  "paused": false,
+  "heartbeatDisabled": true
+}

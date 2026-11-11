@@ -32,6 +32,9 @@
     let wasEnabled = true;
     let playBlocked = "";
     let videoSource = "";
+    let videoElement = null;
+    let playAttempt = null;
+    let playInterruptions = 0;
     let navigation = null;
     let completionNotice = "";
     let verificationShown = false;
@@ -141,6 +144,7 @@
             log(state.question.submissionStatus + (rejected && message ? `：${message}` : ""), success ? "success" : "warning");
             if (active === state && enabled() && !suspended) publish(success ? "等待网站确认" : "需要人工处理", state.question.submissionStatus + (rejected && message ? `：${message}` : ""));
           }
+          options.onWake?.();
         }, { once: true });
       }
       return originalSend.call(this, body);
@@ -368,7 +372,10 @@
       const video = currentView?.$refs?.videoPlayer || doc.querySelector(".right video");
       if (!video || !visible(video) || Array.from(doc.querySelectorAll(".ant-modal-content")).some(visible)) return;
       const source = sourceOf(video);
-      if (videoSource !== source) { videoSource = source; playBlocked = ""; navigation = null; completionNotice = ""; bufferSince = 0; bufferWarned = false; endedSince = 0; }
+      if (videoSource !== source || videoElement !== video) {
+        videoSource = source; videoElement = video; playAttempt = null; playInterruptions = 0;
+        playBlocked = ""; navigation = null; completionNotice = ""; bufferSince = 0; bufferWarned = false; endedSince = 0;
+      }
       if (video.ended) {
         endedSince ||= Date.now();
         if (!settings.nextCourse || !currentView) return;
@@ -384,12 +391,15 @@
           return;
         }
         completedCourses.add(String(currentView.model.id));
-        if (Date.now() - receipt.at < Math.max(2000, options.delay())) return;
         const canNavigate = () => !disposed && !suspended && enabled() && !blocked() && options.settings().nextCourse && isCourse() &&
           findView() === currentView && courseKey(currentView.model.id, currentView.graphId) === key && sourceOf(video) === source && video.ended &&
           !Array.from(doc.querySelectorAll(".ant-modal-content")).some(visible);
         if (navigation) {
-          if (Date.now() - navigation.at > 15000 && !navigation.warned) { navigation.warned = true; log("下一视频未加载，请检查课程权限或页面提示", "warning"); }
+          if (navigation.finished) publish("播放完成", "已到课程目录末尾");
+          else if (Date.now() - navigation.at > 15000) {
+            publish("需要人工处理", "下一视频未加载，请检查课程权限或页面提示");
+            if (!navigation.warned) { navigation.warned = true; log("下一视频未加载，请检查课程权限或页面提示", "warning"); }
+          }
           return;
         }
         const nodes = flatten(currentView.treeData);
@@ -397,7 +407,8 @@
         if (index < 0) return;
         const next = nodes.slice(index + 1).find(({ node }) => String(node.label) === "1" && !node.disabled && !completedCourses.has(String(node.key)));
         if (!next) {
-          navigation = { at: Date.now(), warned: true };
+          navigation = { at: Date.now(), warned: true, finished: true };
+          publish("播放完成", "已到课程目录末尾");
           log("已到课程目录末尾，本轮播放结束", "success");
           return;
         }
@@ -412,26 +423,41 @@
         if (!canNavigate()) return;
         if (!available(element)) { log("无法唯一定位下一视频，请手动展开课程目录", "warning"); navigation = { at: Date.now(), warned: true }; return; }
         navigation = { at: Date.now(), warned: false };
+        publish("切换视频", "网站已确认课程完成，正在加载下一视频");
         element.click();
         log("网站已确认课程完成，正在进入下一视频", "success");
         return;
       }
       endedSince = 0;
+      if (video.error) { publish("需要人工处理", "视频加载失败，请检查播放器和网络"); return; }
       if (video.readyState < 3 && source && (settings.play || !video.paused)) {
         bufferSince ||= Date.now();
         publish("缓冲中", Date.now() - bufferSince > 30000 ? "视频缓冲超过30秒，请检查网络" : "等待视频缓冲");
         if (Date.now() - bufferSince > 30000 && !bufferWarned) { bufferWarned = true; log("视频缓冲超过30秒，请检查网络", "warning"); }
-      } else { bufferSince = 0; bufferWarned = false; publish(video.paused ? "需要人工处理" : "播放中", video.paused ? "等待播放器开始播放" : "视频正常播放"); }
-      if (video.error) { publish("需要人工处理", "视频加载失败，请检查播放器和网络"); return; }
+      } else { bufferSince = 0; bufferWarned = false; publish(video.paused ? "需要人工处理" : "播放中", video.paused ? playBlocked === source ? "请手动点击一次视频播放按钮" : "等待播放器开始播放" : "视频正常播放"); }
       const canAdjustSpeed = () => !disposed && !suspended && enabled() && !blocked() && isCourse() && video.isConnected &&
         sourceOf(video) === source && !Array.from(doc.querySelectorAll(".ant-modal-content")).some(visible);
+      if (settings.play && source && video.paused && video.readyState >= 1 && canAdjustSpeed()) {
+        if (playBlocked === source) {
+          publish("需要人工处理", "请手动点击一次视频播放按钮");
+        } else if (!playAttempt) {
+          const attempt = playAttempt = {video, source};
+          const failed = (error) => {
+            if (playAttempt !== attempt) return;
+            playAttempt = null;
+            if (!canAdjustSpeed() || !options.settings().play) return;
+            if (error?.name === "AbortError" && playInterruptions++ === 0) { options.onWake?.(); return; }
+            playBlocked = source;
+            publish("需要人工处理", "请手动点击一次视频播放按钮");
+            log(error?.name === "NotAllowedError" ? "浏览器未允许自动播放，请在播放器中手动点击一次播放" : "视频播放被中断或失败，请手动点击播放并检查网络", "warning");
+          };
+          video.muted = !!settings.muted;
+          try {
+            Promise.resolve(video.play()).then(() => { if (playAttempt === attempt) playAttempt = null; }, failed);
+          } catch (error) { failed(error); }
+        }
+      }
       await speedController.tick(video, canAdjustSpeed);
-      if (!canAdjustSpeed()) return;
-      if (!settings.play || !source || !video.paused || video.readyState < 2) return;
-      if (playBlocked === source) { publish("需要人工处理", "请手动点击一次视频播放按钮"); return; }
-      video.muted = !!settings.muted;
-      try { await video.play(); }
-      catch { playBlocked = source; publish("需要人工处理", "请手动点击一次视频播放按钮"); log("浏览器未允许自动播放，请在播放器中手动点击一次播放", "warning"); }
     }
 
     async function tick() {
@@ -483,6 +509,7 @@
     }
 
     function pauseVideo() {
+      playAttempt = null;
       const video = findView()?.$refs?.videoPlayer || doc.querySelector(".right video");
       video?.pause();
     }
@@ -497,7 +524,7 @@
     function resume() {
       manualPaused = false;
       options.setEnabled?.(true);
-      playBlocked = "";
+      playBlocked = ""; playAttempt = null; playInterruptions = 0;
       publish("需要人工处理", "正在恢复当前流程");
     }
     function retryCurrent() {
@@ -508,14 +535,14 @@
       return true;
     }
     function suspend() {
-      suspended = true;
+      suspended = true; playAttempt = null;
       cancelQuestion("页面已挂起", true);
       publish("已暂停", "页面已挂起，返回后恢复");
     }
     function restore() { if (!disposed) { suspended = false; playBlocked = ""; } }
     function clearCache() { cache.clear(); publish(status.label, status.detail, status.canRetry); }
     function dispose() {
-      disposed = true;
+      disposed = true; playAttempt = null;
       speedController.dispose();
       cancelQuestion("助手已停止");
       if (prototype.open === observedOpen) prototype.open = originalOpen;

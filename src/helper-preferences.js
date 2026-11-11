@@ -5,7 +5,7 @@
     { key: "panelWidth", label: "面板宽度", type: "number", default: 360, min: 300, max: 560, step: 10, unit: "px", help: "默认 360 px，答题页适度加宽，小窗口自动收拢" },
     { key: "opacity", label: "窗口不透明度", type: "number", default: 100, min: 80, max: 100, step: 5, unit: "%", help: "默认 100%，降低后可看到窗口后方内容" },
     { key: "requestInterval", label: "请求最小间隔", type: "number", default: 5, min: 2, max: 120, step: 1, unit: "秒", help: "默认 5 秒，限制自动模型、搜索和图片请求；站点限流时仍需冷却" },
-    { key: "actionDelay", label: "操作等待时间", type: "number", default: 3, min: 1, max: 120, step: 1, unit: "秒", help: "默认 3 秒，用于题库／试卷提交与切换；视频弹题核对后立即提交" }
+    { key: "actionDelay", label: "操作等待时间", type: "number", default: 3, min: 1, max: 120, step: 1, unit: "秒", help: "默认 3 秒，用于题库／试卷；视频弹题和完成后切课无额外等待" }
   ];
 
   function getHelperPreferences(raw = {}) {

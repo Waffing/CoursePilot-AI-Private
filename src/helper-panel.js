@@ -85,7 +85,7 @@
     body.insertBefore(toolbar, body.firstChild);
     const version = document.createElement("span");
     version.className = "helper-version";
-    version.textContent = "0.2.9.6";
+    version.textContent = "0.2.9.7";
     panel.querySelector(".title")?.append(version);
     const zoomIcons = Array.from(panel.querySelectorAll(".zoom-icon"));
     const onZoomKey = (event) => {
@@ -96,7 +96,11 @@
       icon.setAttribute("aria-label", index === 0 ? "最小化窗口" : "恢复窗口");
       icon.addEventListener("keydown", onZoomKey);
     });
+    let renderedStatus = "";
     function update(state) {
+      const statusSignature = JSON.stringify(state);
+      if (statusSignature === renderedStatus) return;
+      renderedStatus = statusSignature;
       label.textContent = state.label;
       detail.textContent = state.detail;
       toolbar.dataset.state = state.paused ? "paused" : /人工|冷却|缓冲/.test(state.label) ? "warning" : /查询|等待/.test(state.label) ? "busy" : "active";

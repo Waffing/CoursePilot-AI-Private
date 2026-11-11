@@ -60,6 +60,26 @@
       nextCourse: "课程完成后自动下一视频", nextQuestion: "题库练习自动下一题"
     };
     let panelUI = null;
+    let timer = null;
+    let wakeTimer = null;
+    let disposed = false;
+    let suspended = false;
+    let running = false;
+    let dirty = false;
+    function schedule() {
+      if (disposed || suspended) return;
+      dirty = true;
+      if (wakeTimer !== null) return;
+      wakeTimer = setTimeout(async () => {
+        wakeTimer = null;
+        if (disposed || suspended) return;
+        if (running) { void controller.tick(); return; }
+        dirty = false;
+        running = true;
+        try { await controller.tick(); }
+        finally { running = false; if (dirty) schedule(); }
+      }, 0);
+    }
     const instance = vue.getCurrentInstance();
     const preferences = () => getHelperPreferences(config.helperPreferences);
     const speedRate = config.platformParams.jcedutec.parts[0].params.find((param) => param.name === "视频倍速档位（0为自动）");
@@ -71,6 +91,7 @@
       setEnabled: (value) => { config.platformParams.jcedutec.parts[0].params.find((param) => param.name === labels.enabled).value = value; },
       onStatus: (state) => panelUI?.update(state),
       onSpeedStatus: () => panelUI?.update(controller.getStatus()),
+      onWake: schedule,
       initialSpeed: () => speedRate?.value ?? 0,
       saveSpeed: (rate) => { if (speedRate) speedRate.value = rate; },
       delay: () => preferences().actionDelay * 1000,
@@ -86,27 +107,45 @@
     });
     logs.addLog("助手已启动：进入课程、练习，或在考试列表选择正式／模拟试卷后开始", "success");
     logs.addLog("模型连接沿用“答题”页配置；可在“设置”暂停答题、提交或切换", "primary");
-    let timer = null;
-    let disposed = false;
     const start = () => {
       if (disposed) return;
-      if (timer === null) timer = setInterval(() => { void controller.tick(); }, 1000);
-      void controller.tick();
+      if (timer === null) timer = setInterval(schedule, 1000);
+      schedule();
     };
-    const stop = () => { clearInterval(timer); timer = null; };
+    const stop = () => {
+      clearInterval(timer); timer = null;
+      clearTimeout(wakeTimer); wakeTimer = null; dirty = false;
+    };
+    const mediaEvents = ["loadedmetadata", "loadeddata", "canplay", "playing", "waiting", "ended", "pause", "emptied", "error", "ratechange"];
+    const onMedia = (event) => { if (event.target?.tagName === "VIDEO") schedule(); };
+    const modalSelector = ".ant-modal-root, .ant-modal-wrap, .ant-modal-content, .geetest_panel, .geetest_holder, .yidun_popup, [class*='captcha']";
+    const relevantSelector = "video, source, " + modalSelector;
+    const observer = new MutationObserver((records) => {
+      if (records.some((record) => record.target.nodeType === 1 &&
+          (record.target.matches(relevantSelector) || record.target.closest(modalSelector)) ||
+          Array.from(record.addedNodes).concat(Array.from(record.removedNodes)).some((node) =>
+            node.nodeType === 1 && (node.matches(relevantSelector) || node.querySelector(relevantSelector))))) schedule();
+    });
+    observer.observe(_unsafeWindow.document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ["src", "style", "class"]});
+    for (const event of mediaEvents) _unsafeWindow.document.addEventListener(event, onMedia, true);
+    _unsafeWindow.addEventListener("popstate", schedule);
+    const stopConfig = vue.watch(() => [config.platformParams.jcedutec, config.queryApis, config.modelSearch, config.helperPreferences], schedule, {deep: true});
     const dispose = () => {
       if (disposed) return;
       disposed = true;
-      stop(); controller.dispose(); panelUI?.dispose();
+      stop(); observer.disconnect(); stopConfig();
+      for (const event of mediaEvents) _unsafeWindow.document.removeEventListener(event, onMedia, true);
+      _unsafeWindow.removeEventListener("popstate", schedule);
+      controller.dispose(); panelUI?.dispose();
       _unsafeWindow.removeEventListener("pagehide", onHide);
       _unsafeWindow.removeEventListener("pageshow", onShow);
       if (_unsafeWindow.__courseHelperSession291?.controller === controller) delete _unsafeWindow.__courseHelperSession291;
     };
     const onHide = (event) => {
-      stop();
+      suspended = true; stop();
       if (event.persisted) controller.suspend(); else dispose();
     };
-    const onShow = (event) => { if (event.persisted && !disposed) { controller.restore(); start(); panelUI?.clamp(); } };
+    const onShow = (event) => { if (event.persisted && !disposed) { suspended = false; controller.restore(); start(); panelUI?.clamp(); } };
     _unsafeWindow.__courseHelperSession291 = {controller};
     _unsafeWindow.addEventListener("pagehide", onHide);
     _unsafeWindow.addEventListener("pageshow", onShow);

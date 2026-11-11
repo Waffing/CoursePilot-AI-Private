@@ -1,0 +1,73 @@
+{
+  "version": "0.2.9.7",
+  "date": "2026-11-11",
+  "artifact": {
+    "file": "course-helper.user.js",
+    "bytes": 393652,
+    "sha256": "0F3B35E48A6F7BC316FC0A615F1EEDAC5A5D711CD573031DF3C87FB8EC0B13B6"
+  },
+  "changes": {
+    "scope": "bbgu.jcedutec.cn",
+    "completedCourseDelayMs": 0,
+    "nativeSuccessReceiptRequired": true,
+    "startAtMetadata": true,
+    "startBeforeSpeedMenu": true,
+    "nonBlockingPlayPromise": true,
+    "perSourcePendingPlayGuard": true,
+    "temporaryPlayInterruptionRetries": 1,
+    "eventDrivenWakeupsCoalesced": true,
+    "fallbackLocalCheckSeconds": 1,
+    "redundantToolbarWritesSkipped": true
+  },
+  "checks": {
+    "javascriptSyntax": "passed",
+    "total": 127,
+    "passed": 127,
+    "failed": 0,
+    "skipped": 0,
+    "fileConcurrency": 1,
+    "suites": {
+      "exam.test.cjs": 6,
+      "full-runtime.test.cjs": 20,
+      "immediate-submit.test.cjs": 4,
+      "jcedutec.test.cjs": 14,
+      "model-regression.test.cjs": 45,
+      "preferences.test.cjs": 8,
+      "seamless-playback.test.cjs": 7,
+      "v291.test.cjs": 12,
+      "video-speed.test.cjs": 11
+    }
+  },
+  "decodedVideoEvidence": {
+    "sourceCount": 2,
+    "starts": [
+      {
+        "sourceIndex": 0,
+        "metadataToPlayMs": 2,
+        "readyState": 4
+      },
+      {
+        "sourceIndex": 1,
+        "metadataToPlayMs": 41.5,
+        "readyState": 4
+      }
+    ],
+    "secondVideoTime": 0.0945,
+    "rate": 2,
+    "paused": false,
+    "heartbeatDisabled": true
+  },
+  "rollback": {
+    "version": "0.2.9.6",
+    "file": "0.2.9.6/course-helper.user.js",
+    "sha256": "4CD18A882EEDE46672BC97B2AA8B2A3375CADCCFDCE3D1046410F9E166C7C5A7",
+    "verifiedUnchanged": true
+  },
+  "liveAcceptance": {
+    "backendAndModelMocked": true,
+    "realMediaDecoding": true,
+    "authenticatedWebsiteSubmission": false,
+    "installedThisTurn": false,
+    "unconditionalStallFreeGuarantee": false
+  }
+}

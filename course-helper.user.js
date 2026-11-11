@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树--网课小助手【大模型版】
 // @namespace    noshuang
-// @version      0.2.9.6
+// @version      0.2.9.7
 // @author       isMobile
 // @description  多平台网课小助手：视频学习、随堂和题库练习、大模型与图片答题，支持可选倍速、个性化界面、请求间隔与失败冷却、暂停恢复、单题重试和本页答案缓存。
 // @license      MIT
@@ -7196,7 +7196,7 @@
     { key: "panelWidth", label: "面板宽度", type: "number", default: 360, min: 300, max: 560, step: 10, unit: "px", help: "默认 360 px，答题页适度加宽，小窗口自动收拢" },
     { key: "opacity", label: "窗口不透明度", type: "number", default: 100, min: 80, max: 100, step: 5, unit: "%", help: "默认 100%，降低后可看到窗口后方内容" },
     { key: "requestInterval", label: "请求最小间隔", type: "number", default: 5, min: 2, max: 120, step: 1, unit: "秒", help: "默认 5 秒，限制自动模型、搜索和图片请求；站点限流时仍需冷却" },
-    { key: "actionDelay", label: "操作等待时间", type: "number", default: 3, min: 1, max: 120, step: 1, unit: "秒", help: "默认 3 秒，用于题库／试卷提交与切换；视频弹题核对后立即提交" }
+    { key: "actionDelay", label: "操作等待时间", type: "number", default: 3, min: 1, max: 120, step: 1, unit: "秒", help: "默认 3 秒，用于题库／试卷；视频弹题和完成后切课无额外等待" }
   ];
 
   function getHelperPreferences(raw = {}) {
@@ -7526,6 +7526,9 @@
     let wasEnabled = true;
     let playBlocked = "";
     let videoSource = "";
+    let videoElement = null;
+    let playAttempt = null;
+    let playInterruptions = 0;
     let navigation = null;
     let completionNotice = "";
     let verificationShown = false;
@@ -7635,6 +7638,7 @@
             log(state.question.submissionStatus + (rejected && message ? `：${message}` : ""), success ? "success" : "warning");
             if (active === state && enabled() && !suspended) publish(success ? "等待网站确认" : "需要人工处理", state.question.submissionStatus + (rejected && message ? `：${message}` : ""));
           }
+          options.onWake?.();
         }, { once: true });
       }
       return originalSend.call(this, body);
@@ -7862,7 +7866,10 @@
       const video = currentView?.$refs?.videoPlayer || doc.querySelector(".right video");
       if (!video || !visible(video) || Array.from(doc.querySelectorAll(".ant-modal-content")).some(visible)) return;
       const source = sourceOf(video);
-      if (videoSource !== source) { videoSource = source; playBlocked = ""; navigation = null; completionNotice = ""; bufferSince = 0; bufferWarned = false; endedSince = 0; }
+      if (videoSource !== source || videoElement !== video) {
+        videoSource = source; videoElement = video; playAttempt = null; playInterruptions = 0;
+        playBlocked = ""; navigation = null; completionNotice = ""; bufferSince = 0; bufferWarned = false; endedSince = 0;
+      }
       if (video.ended) {
         endedSince ||= Date.now();
         if (!settings.nextCourse || !currentView) return;
@@ -7878,12 +7885,15 @@
           return;
         }
         completedCourses.add(String(currentView.model.id));
-        if (Date.now() - receipt.at < Math.max(2000, options.delay())) return;
         const canNavigate = () => !disposed && !suspended && enabled() && !blocked() && options.settings().nextCourse && isCourse() &&
           findView() === currentView && courseKey(currentView.model.id, currentView.graphId) === key && sourceOf(video) === source && video.ended &&
           !Array.from(doc.querySelectorAll(".ant-modal-content")).some(visible);
         if (navigation) {
-          if (Date.now() - navigation.at > 15000 && !navigation.warned) { navigation.warned = true; log("下一视频未加载，请检查课程权限或页面提示", "warning"); }
+          if (navigation.finished) publish("播放完成", "已到课程目录末尾");
+          else if (Date.now() - navigation.at > 15000) {
+            publish("需要人工处理", "下一视频未加载，请检查课程权限或页面提示");
+            if (!navigation.warned) { navigation.warned = true; log("下一视频未加载，请检查课程权限或页面提示", "warning"); }
+          }
           return;
         }
         const nodes = flatten(currentView.treeData);
@@ -7891,7 +7901,8 @@
         if (index < 0) return;
         const next = nodes.slice(index + 1).find(({ node }) => String(node.label) === "1" && !node.disabled && !completedCourses.has(String(node.key)));
         if (!next) {
-          navigation = { at: Date.now(), warned: true };
+          navigation = { at: Date.now(), warned: true, finished: true };
+          publish("播放完成", "已到课程目录末尾");
           log("已到课程目录末尾，本轮播放结束", "success");
           return;
         }
@@ -7906,26 +7917,41 @@
         if (!canNavigate()) return;
         if (!available(element)) { log("无法唯一定位下一视频，请手动展开课程目录", "warning"); navigation = { at: Date.now(), warned: true }; return; }
         navigation = { at: Date.now(), warned: false };
+        publish("切换视频", "网站已确认课程完成，正在加载下一视频");
         element.click();
         log("网站已确认课程完成，正在进入下一视频", "success");
         return;
       }
       endedSince = 0;
+      if (video.error) { publish("需要人工处理", "视频加载失败，请检查播放器和网络"); return; }
       if (video.readyState < 3 && source && (settings.play || !video.paused)) {
         bufferSince ||= Date.now();
         publish("缓冲中", Date.now() - bufferSince > 30000 ? "视频缓冲超过30秒，请检查网络" : "等待视频缓冲");
         if (Date.now() - bufferSince > 30000 && !bufferWarned) { bufferWarned = true; log("视频缓冲超过30秒，请检查网络", "warning"); }
-      } else { bufferSince = 0; bufferWarned = false; publish(video.paused ? "需要人工处理" : "播放中", video.paused ? "等待播放器开始播放" : "视频正常播放"); }
-      if (video.error) { publish("需要人工处理", "视频加载失败，请检查播放器和网络"); return; }
+      } else { bufferSince = 0; bufferWarned = false; publish(video.paused ? "需要人工处理" : "播放中", video.paused ? playBlocked === source ? "请手动点击一次视频播放按钮" : "等待播放器开始播放" : "视频正常播放"); }
       const canAdjustSpeed = () => !disposed && !suspended && enabled() && !blocked() && isCourse() && video.isConnected &&
         sourceOf(video) === source && !Array.from(doc.querySelectorAll(".ant-modal-content")).some(visible);
+      if (settings.play && source && video.paused && video.readyState >= 1 && canAdjustSpeed()) {
+        if (playBlocked === source) {
+          publish("需要人工处理", "请手动点击一次视频播放按钮");
+        } else if (!playAttempt) {
+          const attempt = playAttempt = {video, source};
+          const failed = (error) => {
+            if (playAttempt !== attempt) return;
+            playAttempt = null;
+            if (!canAdjustSpeed() || !options.settings().play) return;
+            if (error?.name === "AbortError" && playInterruptions++ === 0) { options.onWake?.(); return; }
+            playBlocked = source;
+            publish("需要人工处理", "请手动点击一次视频播放按钮");
+            log(error?.name === "NotAllowedError" ? "浏览器未允许自动播放，请在播放器中手动点击一次播放" : "视频播放被中断或失败，请手动点击播放并检查网络", "warning");
+          };
+          video.muted = !!settings.muted;
+          try {
+            Promise.resolve(video.play()).then(() => { if (playAttempt === attempt) playAttempt = null; }, failed);
+          } catch (error) { failed(error); }
+        }
+      }
       await speedController.tick(video, canAdjustSpeed);
-      if (!canAdjustSpeed()) return;
-      if (!settings.play || !source || !video.paused || video.readyState < 2) return;
-      if (playBlocked === source) { publish("需要人工处理", "请手动点击一次视频播放按钮"); return; }
-      video.muted = !!settings.muted;
-      try { await video.play(); }
-      catch { playBlocked = source; publish("需要人工处理", "请手动点击一次视频播放按钮"); log("浏览器未允许自动播放，请在播放器中手动点击一次播放", "warning"); }
     }
 
     async function tick() {
@@ -7977,6 +8003,7 @@
     }
 
     function pauseVideo() {
+      playAttempt = null;
       const video = findView()?.$refs?.videoPlayer || doc.querySelector(".right video");
       video?.pause();
     }
@@ -7991,7 +8018,7 @@
     function resume() {
       manualPaused = false;
       options.setEnabled?.(true);
-      playBlocked = "";
+      playBlocked = ""; playAttempt = null; playInterruptions = 0;
       publish("需要人工处理", "正在恢复当前流程");
     }
     function retryCurrent() {
@@ -8002,14 +8029,14 @@
       return true;
     }
     function suspend() {
-      suspended = true;
+      suspended = true; playAttempt = null;
       cancelQuestion("页面已挂起", true);
       publish("已暂停", "页面已挂起，返回后恢复");
     }
     function restore() { if (!disposed) { suspended = false; playBlocked = ""; } }
     function clearCache() { cache.clear(); publish(status.label, status.detail, status.canRetry); }
     function dispose() {
-      disposed = true;
+      disposed = true; playAttempt = null;
       speedController.dispose();
       cancelQuestion("助手已停止");
       if (prototype.open === observedOpen) prototype.open = originalOpen;
@@ -8107,7 +8134,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     body.insertBefore(toolbar, body.firstChild);
     const version = document.createElement("span");
     version.className = "helper-version";
-    version.textContent = "0.2.9.6";
+    version.textContent = "0.2.9.7";
     panel.querySelector(".title")?.append(version);
     const zoomIcons = Array.from(panel.querySelectorAll(".zoom-icon"));
     const onZoomKey = (event) => {
@@ -8118,7 +8145,11 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       icon.setAttribute("aria-label", index === 0 ? "最小化窗口" : "恢复窗口");
       icon.addEventListener("keydown", onZoomKey);
     });
+    let renderedStatus = "";
     function update(state) {
+      const statusSignature = JSON.stringify(state);
+      if (statusSignature === renderedStatus) return;
+      renderedStatus = statusSignature;
       label.textContent = state.label;
       detail.textContent = state.detail;
       toolbar.dataset.state = state.paused ? "paused" : /人工|冷却|缓冲/.test(state.label) ? "warning" : /查询|等待/.test(state.label) ? "busy" : "active";
@@ -8252,6 +8283,26 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       nextCourse: "课程完成后自动下一视频", nextQuestion: "题库练习自动下一题"
     };
     let panelUI = null;
+    let timer = null;
+    let wakeTimer = null;
+    let disposed = false;
+    let suspended = false;
+    let running = false;
+    let dirty = false;
+    function schedule() {
+      if (disposed || suspended) return;
+      dirty = true;
+      if (wakeTimer !== null) return;
+      wakeTimer = setTimeout(async () => {
+        wakeTimer = null;
+        if (disposed || suspended) return;
+        if (running) { void controller.tick(); return; }
+        dirty = false;
+        running = true;
+        try { await controller.tick(); }
+        finally { running = false; if (dirty) schedule(); }
+      }, 0);
+    }
     const instance = vue.getCurrentInstance();
     const preferences = () => getHelperPreferences(config.helperPreferences);
     const speedRate = config.platformParams.jcedutec.parts[0].params.find((param) => param.name === "视频倍速档位（0为自动）");
@@ -8263,6 +8314,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       setEnabled: (value) => { config.platformParams.jcedutec.parts[0].params.find((param) => param.name === labels.enabled).value = value; },
       onStatus: (state) => panelUI?.update(state),
       onSpeedStatus: () => panelUI?.update(controller.getStatus()),
+      onWake: schedule,
       initialSpeed: () => speedRate?.value ?? 0,
       saveSpeed: (rate) => { if (speedRate) speedRate.value = rate; },
       delay: () => preferences().actionDelay * 1000,
@@ -8278,27 +8330,45 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     });
     logs.addLog("助手已启动：进入课程、练习，或在考试列表选择正式／模拟试卷后开始", "success");
     logs.addLog("模型连接沿用“答题”页配置；可在“设置”暂停答题、提交或切换", "primary");
-    let timer = null;
-    let disposed = false;
     const start = () => {
       if (disposed) return;
-      if (timer === null) timer = setInterval(() => { void controller.tick(); }, 1000);
-      void controller.tick();
+      if (timer === null) timer = setInterval(schedule, 1000);
+      schedule();
     };
-    const stop = () => { clearInterval(timer); timer = null; };
+    const stop = () => {
+      clearInterval(timer); timer = null;
+      clearTimeout(wakeTimer); wakeTimer = null; dirty = false;
+    };
+    const mediaEvents = ["loadedmetadata", "loadeddata", "canplay", "playing", "waiting", "ended", "pause", "emptied", "error", "ratechange"];
+    const onMedia = (event) => { if (event.target?.tagName === "VIDEO") schedule(); };
+    const modalSelector = ".ant-modal-root, .ant-modal-wrap, .ant-modal-content, .geetest_panel, .geetest_holder, .yidun_popup, [class*='captcha']";
+    const relevantSelector = "video, source, " + modalSelector;
+    const observer = new MutationObserver((records) => {
+      if (records.some((record) => record.target.nodeType === 1 &&
+          (record.target.matches(relevantSelector) || record.target.closest(modalSelector)) ||
+          Array.from(record.addedNodes).concat(Array.from(record.removedNodes)).some((node) =>
+            node.nodeType === 1 && (node.matches(relevantSelector) || node.querySelector(relevantSelector))))) schedule();
+    });
+    observer.observe(_unsafeWindow.document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ["src", "style", "class"]});
+    for (const event of mediaEvents) _unsafeWindow.document.addEventListener(event, onMedia, true);
+    _unsafeWindow.addEventListener("popstate", schedule);
+    const stopConfig = vue.watch(() => [config.platformParams.jcedutec, config.queryApis, config.modelSearch, config.helperPreferences], schedule, {deep: true});
     const dispose = () => {
       if (disposed) return;
       disposed = true;
-      stop(); controller.dispose(); panelUI?.dispose();
+      stop(); observer.disconnect(); stopConfig();
+      for (const event of mediaEvents) _unsafeWindow.document.removeEventListener(event, onMedia, true);
+      _unsafeWindow.removeEventListener("popstate", schedule);
+      controller.dispose(); panelUI?.dispose();
       _unsafeWindow.removeEventListener("pagehide", onHide);
       _unsafeWindow.removeEventListener("pageshow", onShow);
       if (_unsafeWindow.__courseHelperSession291?.controller === controller) delete _unsafeWindow.__courseHelperSession291;
     };
     const onHide = (event) => {
-      stop();
+      suspended = true; stop();
       if (event.persisted) controller.suspend(); else dispose();
     };
-    const onShow = (event) => { if (event.persisted && !disposed) { controller.restore(); start(); panelUI?.clamp(); } };
+    const onShow = (event) => { if (event.persisted && !disposed) { suspended = false; controller.restore(); start(); panelUI?.clamp(); } };
     _unsafeWindow.__courseHelperSession291 = {controller};
     _unsafeWindow.addEventListener("pagehide", onHide);
     _unsafeWindow.addEventListener("pageshow", onShow);
