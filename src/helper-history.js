@@ -4,7 +4,7 @@
     setup(props, {emit}) {
       return () => vue.h("nav", {
         class: "helper-history-pages", "aria-label": "答题历史分页",
-        hidden: helperPage.location.hostname !== "bbgu.jcedutec.cn" || props.pages <= 1
+        hidden: !["bbgu.jcedutec.cn", "wisdom-mooc.zhihuishu.com", "onlineexamh5new.zhihuishu.com"].includes(helperPage.location.hostname) || props.pages <= 1
       }, [
         vue.h("button", {type: "button", disabled: props.page <= 1, onClick: () => emit("select", props.page - 1)}, "上一页"),
         vue.h("span", null, `第 ${props.page} / ${props.pages} 页 · 共 ${props.total} 题`),
