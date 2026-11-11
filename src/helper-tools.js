@@ -7,12 +7,12 @@
       if (!["http:", "https:"].includes(url.protocol)) throw new Error("模型地址必须为 HTTP 或 HTTPS");
       modelSettings.url = url.origin + url.pathname;
     }
-    const params = config.platformParams?.[config.platformName === "wisdom" ? "wisdom" : "jcedutec"]?.parts?.[0]?.params || [];
+    const params = config.platformParams?.jcedutec?.parts?.[0]?.params || [];
     const rawFallback = config.helperFallbackModel;
     const fallback = rawFallback ? {enabled: rawFallback.enabled, waitSeconds: rawFallback.waitSeconds, protocol: rawFallback.protocol, model: rawFallback.model,
       url: rawFallback.url ? new URL(rawFallback.url).origin + new URL(rawFallback.url).pathname : ""} : undefined;
     return {
-      format: "course-helper-settings", version: 1, platformId: config.platformName === "wisdom" ? "wisdom" : "jcedutec",
+      format: "course-helper-settings", version: 1,
       preferences: getHelperPreferences(config.helperPreferences),
       model: modelSettings, ...(fallback ? {fallback} : {}),
       platform: Object.fromEntries(params.map((param) => [param.name, param.value]))
@@ -25,7 +25,6 @@
     try { saved = JSON.parse(input); } catch { throw new Error("文件不是有效的 JSON"); }
     if (saved?.format !== "course-helper-settings" || saved.version !== 1 || !saved.preferences || !saved.model || !saved.platform)
       throw new Error("不是受支持的助手设置备份");
-    if (saved.platformId && saved.platformId !== (config.platformName === "wisdom" ? "wisdom" : "jcedutec")) throw new Error("这份备份属于其他网站平台，请在对应网站导入");
     const snapshot = createHelperSettingsBackup(config);
     const changes = [];
     const preferences = getHelperPreferences(saved.preferences);
@@ -52,7 +51,7 @@
       if (snapshot.model[key] !== value) changes.push("模型：" + ({provider:"服务商",protocol:"协议",model:"模型名称",url:"接口地址",autoModels:"自动读取模型",timeout:"超时",maxTokens:"输出长度",temperature:"温度",temperatureEnabled:"启用温度"}[key]));
     }
     const platform = [];
-    for (const param of config.platformParams[config.platformName === "wisdom" ? "wisdom" : "jcedutec"].parts[0].params) {
+    for (const param of config.platformParams.jcedutec.parts[0].params) {
       if (!Object.prototype.hasOwnProperty.call(saved.platform, param.name)) continue;
       const value = saved.platform[param.name];
       if (typeof value !== typeof param.value || typeof value === "number" && (!Number.isFinite(value) || value < 0 || value > 16)) throw new Error("平台设置格式不正确");
@@ -103,7 +102,7 @@
         .replace(/\b\d{10,}\b/g, "[编号已隐藏]").slice(0, 500);
     };
     return JSON.stringify({
-      version: "0.2.9.10", page: location.origin + location.pathname,
+      version: "0.2.9.9", page: location.origin + location.pathname,
       state: {label: redact(state.label), detail: redact(state.detail)},
       preferences: getHelperPreferences(config.helperPreferences),
       logs: logs.slice(-20).map((item) => ({time: redact(item.time), type: item.type, message: redact(item.message)}))

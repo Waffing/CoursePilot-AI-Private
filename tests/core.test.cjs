@@ -75,16 +75,3 @@ test('distribution contains no old notice request or announcement component',()=
  assert(!full.includes('https://api.tikuhai.com/def/notice'));assert(!full.includes('getNotice'));assert(!full.includes('announcements.value'));
  assert(!/^\/\/ @antifeature\s+ads/m.test(full));
 });
-test('wisdom settings backups stay scoped to their platform and preserve credentials',()=>{
- const helper=api(),input=config();input.platformName='wisdom';input.platformParams.wisdom={parts:[{params:[{name:'启用助手',value:false}]}]};
- const backup=helper.createHelperSettingsBackup(input);assert.equal(backup.platformId,'wisdom');assert.equal(backup.platform['启用助手'],false);
- assert.throws(()=>helper.prepareHelperSettingsImport(JSON.stringify(backup),config()));
- const plan=helper.prepareHelperSettingsImport(JSON.stringify(backup),input);plan.apply();assert.equal(input.queryApis[0].token,'TEST_SECRET_KEY');
-});
-test('new wisdom learning and exam hosts have routes, independent settings and platform speed limits',()=>{
- const script=fs.readFileSync(path.join(__dirname,'..','course-helper.user.js'),'utf8');
- assert(script.includes('keyword: "wisdom-mooc.zhihuishu.com", logic: useWisdomMoocLogic'));
- assert(script.includes('keyword: "onlineexamh5new.zhihuishu.com", logic: useWisdomMoocLogic'));
- assert(script.includes('name: "智慧树设置"'));assert(script.includes('maxRate: 1.8'));
- assert(script.includes('await options.resolve(question,context)'));assert(script.includes('!isWisdomMoocPage()'));
-});
