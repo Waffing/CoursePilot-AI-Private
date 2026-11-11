@@ -11,7 +11,7 @@
 ![JavaScript](https://img.shields.io/badge/JavaScript-UserScript-f2c94c?style=flat-square)
 ![浏览器](https://img.shields.io/badge/browser-Edge%20%7C%20Chrome-64748b?style=flat-square)
 
-**[安装最新版](https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js)** · **[配图新手教程](docs/新手教程.md)** · **[更新内容](docs/更新说明-0.2.9.9.md)** · **[反馈问题](https://github.com/Waffing/CoursePilot-AI-Private/issues)**
+**[安装 0.2.9.9](https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/v0.2.9.9/course-helper.user.js)** · **[配图新手教程](docs/新手教程.md)** · **[更新内容](docs/更新说明-0.2.9.9.md)** · **[反馈问题](https://github.com/Waffing/CoursePilot-AI-Private/issues)**
 
 </div>
 
@@ -31,7 +31,7 @@
 ## 三步开始
 
 1. 安装 [暴力猴 Violentmonkey](https://violentmonkey.github.io/get-it/)，按浏览器选择官网提供的稳定版商店入口。
-2. 点击 **[安装完整脚本](https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js)**。若没有安装页，在暴力猴新建脚本中粘贴 [Raw 完整内容](course-helper.user.js)，`Ctrl+S` 保存。
+2. 点击 **[安装 0.2.9.9 完整脚本](https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/v0.2.9.9/course-helper.user.js)**。若没有安装页，在暴力猴新建脚本中粘贴 [Raw 完整内容](https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/v0.2.9.9/course-helper.user.js)，`Ctrl+S` 保存。
 3. 登录课程网站并刷新，先暂停助手，在“答题”配置自己的模型接口、Key 和模型，测试连接后恢复。
 
 第一次使用请按 **[配图新手教程](docs/新手教程.md)** 操作。已有版本在原脚本条目更新，以保留密钥和设置；同一浏览器只启用一份本脚本。
