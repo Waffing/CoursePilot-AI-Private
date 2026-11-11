@@ -1,0 +1,44 @@
+{
+  "version": "0.2.9.6",
+  "date": "2026-11-11",
+  "artifact": {
+    "file": "course-helper.user.js",
+    "bytes": 389770,
+    "sha256": "4CD18A882EEDE46672BC97B2AA8B2A3375CADCCFDCE3D1046410F9E166C7C5A7"
+  },
+  "changes": {
+    "videoQuizSubmission": "Immediately click the native submit button in the same processing pass after checking selected options; no extra operation delay",
+    "scope": "bbgu.jcedutec.cn/students/courseDetail",
+    "autoSubmitSwitchRespected": true,
+    "practiceAndExamDelayPreserved": true
+  },
+  "checks": {
+    "javascriptSyntax": "passed",
+    "total": 113,
+    "passed": 113,
+    "failed": 0,
+    "skipped": 0,
+    "suites": {
+      "exam.test.cjs": 6,
+      "full-runtime.test.cjs": 13,
+      "immediate-submit.test.cjs": 4,
+      "jcedutec.test.cjs": 14,
+      "model-regression.test.cjs": 45,
+      "preferences.test.cjs": 8,
+      "v291.test.cjs": 12,
+      "video-speed.test.cjs": 11
+    }
+  },
+  "rollback": {
+    "version": "0.2.9.5",
+    "file": "0.2.9.5/course-helper.user.js",
+    "sha256": "4D34A74952A59A9FF70A9222AD2670C818058EEB5683A9042116137FE39C9817",
+    "verifiedUnchanged": true
+  },
+  "liveAcceptance": {
+    "isolatedBrowserTests": true,
+    "mockBackendAndModel": true,
+    "realWebsiteSubmitted": false,
+    "installedThisTurn": false
+  }
+}

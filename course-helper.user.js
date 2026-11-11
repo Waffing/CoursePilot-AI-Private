@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树--网课小助手【大模型版】
 // @namespace    noshuang
-// @version      0.2.9.5
+// @version      0.2.9.6
 // @author       isMobile
 // @description  多平台网课小助手：视频学习、随堂和题库练习、大模型与图片答题，支持可选倍速、个性化界面、请求间隔与失败冷却、暂停恢复、单题重试和本页答案缓存。
 // @license      MIT
@@ -7196,7 +7196,7 @@
     { key: "panelWidth", label: "面板宽度", type: "number", default: 360, min: 300, max: 560, step: 10, unit: "px", help: "默认 360 px，答题页适度加宽，小窗口自动收拢" },
     { key: "opacity", label: "窗口不透明度", type: "number", default: 100, min: 80, max: 100, step: 5, unit: "%", help: "默认 100%，降低后可看到窗口后方内容" },
     { key: "requestInterval", label: "请求最小间隔", type: "number", default: 5, min: 2, max: 120, step: 1, unit: "秒", help: "默认 5 秒，限制自动模型、搜索和图片请求；站点限流时仍需冷却" },
-    { key: "actionDelay", label: "操作等待时间", type: "number", default: 3, min: 1, max: 120, step: 1, unit: "秒", help: "默认 3 秒，填选后等待提交或切换；升级时继承旧间隔" }
+    { key: "actionDelay", label: "操作等待时间", type: "number", default: 3, min: 1, max: 120, step: 1, unit: "秒", help: "默认 3 秒，用于题库／试卷提交与切换；视频弹题核对后立即提交" }
   ];
 
   function getHelperPreferences(raw = {}) {
@@ -7808,7 +7808,7 @@
       if (state.phase === "filled") publish("等待提交", state.question.submissionStatus || "已填选");
       if (isExam()) { await examFlow.process(state); return; }
       if (!options.settings().submit) return;
-      if (state.phase === "filled" && Date.now() - state.at >= options.delay()) {
+      if (state.phase === "filled" && (isCourse() || Date.now() - state.at >= options.delay())) {
         if (!selected(state)) { state.phase = "blocked"; state.question.answer = ["答案被手动修改，已停止自动提交"]; publish("需要人工处理", state.question.answer[0], true); log(state.question.answer[0], "warning"); return; }
         const submit = button(parsed.root, "提交") || (isPractice() && options.settings().nextQuestion ? button(parsed.root, "下一题") : null);
         if (!submit) return;
@@ -8107,7 +8107,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     body.insertBefore(toolbar, body.firstChild);
     const version = document.createElement("span");
     version.className = "helper-version";
-    version.textContent = "0.2.9.5";
+    version.textContent = "0.2.9.6";
     panel.querySelector(".title")?.append(version);
     const zoomIcons = Array.from(panel.querySelectorAll(".zoom-icon"));
     const onZoomKey = (event) => {

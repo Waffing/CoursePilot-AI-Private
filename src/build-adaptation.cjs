@@ -7,7 +7,7 @@ function replaceOnce(needle, replacement) {
   if (begin < 0 || source.indexOf(needle, begin + needle.length) >= 0) throw new Error('Ambiguous patch: ' + needle.slice(0, 100));
   source = source.slice(0, begin) + replacement + source.slice(begin + needle.length);
 }
-replaceOnce('// @version      0.2.8.2', '// @version      0.2.9.5');
+replaceOnce('// @version      0.2.8.2', '// @version      0.2.9.6');
 replaceOnce('// @description  支持多家大模型、自动获取模型列表和联网搜索，保留原版超星与智慧树的题目填写、视频、章节切换和提交机制。', '// @description  多平台网课小助手：视频学习、随堂和题库练习、大模型与图片答题，支持可选倍速、个性化界面、请求间隔与失败冷却、暂停恢复、单题重试和本页答案缓存。');
 replaceOnce("(function (vue, pinia, rxjs, md5, ElementPlus) {\n  'use strict';".replace(/\n/g, '\r\n'), "(function (vue, pinia, rxjs, md5, ElementPlus) {\n  'use strict';\n  const helperPage = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;\n  if (helperPage.location.hostname === 'bbgu.jcedutec.cn' && helperPage.top === helperPage.self) {\n    if (helperPage.__courseHelperMount291) return;\n    helperPage.__courseHelperMount291 = true;\n  }");
 replaceOnce('// @match        *://*.zhihuishu.com/*', '// @match        *://*.zhihuishu.com/*\n// @match        *://bbgu.jcedutec.cn/*');

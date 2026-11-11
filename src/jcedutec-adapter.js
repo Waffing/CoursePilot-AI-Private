@@ -314,7 +314,7 @@
       if (state.phase === "filled") publish("等待提交", state.question.submissionStatus || "已填选");
       if (isExam()) { await examFlow.process(state); return; }
       if (!options.settings().submit) return;
-      if (state.phase === "filled" && Date.now() - state.at >= options.delay()) {
+      if (state.phase === "filled" && (isCourse() || Date.now() - state.at >= options.delay())) {
         if (!selected(state)) { state.phase = "blocked"; state.question.answer = ["答案被手动修改，已停止自动提交"]; publish("需要人工处理", state.question.answer[0], true); log(state.question.answer[0], "warning"); return; }
         const submit = button(parsed.root, "提交") || (isPractice() && options.settings().nextQuestion ? button(parsed.root, "下一题") : null);
         if (!submit) return;

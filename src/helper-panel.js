@@ -85,7 +85,7 @@
     body.insertBefore(toolbar, body.firstChild);
     const version = document.createElement("span");
     version.className = "helper-version";
-    version.textContent = "0.2.9.5";
+    version.textContent = "0.2.9.6";
     panel.querySelector(".title")?.append(version);
     const zoomIcons = Array.from(panel.querySelectorAll(".zoom-icon"));
     const onZoomKey = (event) => {
