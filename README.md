@@ -4,14 +4,14 @@
 
 视频学习、模型答题与便捷控制，集中在一个可拖动的小窗口。
 
-作者署名 **Waffing** · 基于 isMobile 及上游贡献者的原作维护
+作者署名 **Waffing**
 
-![版本](https://img.shields.io/badge/version-0.2.9.8-2563eb?style=flat-square)
+![版本](https://img.shields.io/badge/version-0.2.9.9-2563eb?style=flat-square)
 ![MIT](https://img.shields.io/badge/license-MIT-10b981?style=flat-square)
 ![JavaScript](https://img.shields.io/badge/JavaScript-UserScript-f2c94c?style=flat-square)
 ![浏览器](https://img.shields.io/badge/browser-Edge%20%7C%20Chrome-64748b?style=flat-square)
 
-**[安装最新版](https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js)** · **[配图新手教程](docs/新手教程.md)** · **[更新内容](docs/更新说明-0.2.9.8.md)** · **[反馈问题](https://github.com/Waffing/CoursePilot-AI-Private/issues)**
+**[安装最新版](https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js)** · **[配图新手教程](docs/新手教程.md)** · **[更新内容](docs/更新说明-0.2.9.9.md)** · **[反馈问题](https://github.com/Waffing/CoursePilot-AI-Private/issues)**
 
 </div>
 
@@ -26,7 +26,7 @@
 
 ![迷你控制条](docs/images/04-mini-toolbar.png)
 
-> 助手截图来自 0.2.9.8 的隔离演示环境，使用测试模型、测试用户和模拟网站响应；不包含真实登录信息，不代表真实账户验收。
+> 助手截图来自 0.2.9.9 的隔离演示环境，使用测试模型、测试用户和模拟网站响应；不包含真实登录信息，不代表真实账户验收。
 
 ## 三步开始
 
@@ -50,6 +50,12 @@
 | 操作便利 | 迷你控制条、主题、文字大小、设置备份、导入预览与脱敏诊断 |
 
 新增面板、协调机制与请求节奏用于 `bbgu.jcedutec.cn`；原有超星学习通、知到智慧树逻辑继续保留。新站点的试卷需用户自己选卷和开始；验证码、身份验证、签名和登录由用户处理。每日练习及其他未适配页面没有新增支持。
+
+## 自动更新
+
+脚本关联本仓库：`course-helper.meta.js` 提供版本信息，`course-helper.user.js` 提供完整更新。暴力猴／油猴启用脚本更新后，会按管理器的检查周期从 GitHub 获取新版本；也可在管理面板手动“检查更新”。
+
+旧安装先更新原条目到 **0.2.9.9** 并刷新一次，即可使用新的更新地址。安装名称、namespace 和模型存储键继续保留。**不再显示或请求旧公告**。
 
 ## 常用设置
 
@@ -75,8 +81,8 @@
 ## 文档与下载
 
 - [从安装暴力猴到日常使用](docs/新手教程.md)：安装、模型配置、操作按钮、迁移和常见问题。
-- [0.2.9.8 更新说明](docs/更新说明-0.2.9.8.md)、[验证报告](docs/验证报告-0.2.9.8.md)、[运行约束](docs/运行约束与异常处理-0.2.9.8.md)。
-- [完整交付包](artifacts/网课小助手-0.2.9.8.zip)、[0.2.9.7 回退脚本](rollback/0.2.9.7/course-helper.user.js)、[文件校验和](SHA256SUMS.txt)。
+- [0.2.9.9 更新说明](docs/更新说明-0.2.9.9.md)、[验证报告](docs/验证报告-0.2.9.9.md)、[运行约束](docs/运行约束与异常处理-0.2.9.9.md)。
+- [完整交付包](artifacts/网课小助手-0.2.9.9.zip)、[0.2.9.8 回退脚本](rollback/0.2.9.8/course-helper.user.js)、[文件校验和](SHA256SUMS.txt)。
 
 网络、模型服务、网站规则和浏览器策略仍影响运行效果，模型答案不保证正确。隔离测试与真实账户、真实管理器中的验收结果分别记录。
 
@@ -94,6 +100,6 @@ node --test tests/core.test.cjs
 
 请勿在 Issues 上传 API Key、完整浏览器配置或登录数据。可以使用“复制诊断”，检查内容后附上版本和复现步骤。
 
-## 授权与致谢
+## 作者与授权
 
-保留原作者 **isMobile** 及上游贡献者署名，沿用 [MIT License](LICENSE)。暴力猴由 [Violentmonkey](https://github.com/violentmonkey/violentmonkey) 项目维护，模型服务由使用者自行配置。
+作者署名 **Waffing**，采用 [MIT License](LICENSE)。模型服务由使用者自行配置。

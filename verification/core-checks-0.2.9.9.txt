@@ -1,0 +1,18 @@
+✔ export excludes credentials, URL query and custom prompts (14.2372ms)
+✔ import previews changes before application and preserves existing credentials (11.0451ms)
+✔ invalid backup and cross-origin credential reuse are rejected (10.7912ms)
+✔ diagnostics hide known keys, bearer tokens, URL credentials and account identifiers (10.2687ms)
+✔ shared request state carries cooldown across independent page pacers (11.7896ms)
+✔ cancelling a queued request prevents reserving another call (11.372ms)
+✔ tab ownership waits for claims, transfers explicitly and retains minimal submission records (387.5553ms)
+✔ a 15-second deadline aborts the pending call and switches to the next configured model (14.8788ms)
+✔ update manifest is identical to the complete script metadata and points to this GitHub repository (5.9415ms)
+✔ distribution contains no old notice request or announcement component (4.7854ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 641.3206

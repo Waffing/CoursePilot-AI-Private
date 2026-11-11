@@ -62,3 +62,16 @@ test('a 15-second deadline aborts the pending call and switches to the next conf
  }});
  assert.equal(result.success,true);assert.equal(calls.length,2);assert.equal(calls[0].signal.aborted,true);assert.equal(calls[0].isCurrent(),false);
 });
+test('update manifest is identical to the complete script metadata and points to this GitHub repository',()=>{
+ const full=fs.readFileSync(path.join(__dirname,'..','course-helper.user.js'),'utf8');
+ const meta=fs.readFileSync(path.join(__dirname,'..','course-helper.meta.js'),'utf8');
+ assert.equal(meta.trim(),full.slice(0,full.indexOf('// ==/UserScript==')+'// ==/UserScript=='.length).trim());
+ assert.match(meta,/@updateURL\s+https:\/\/raw\.githubusercontent\.com\/Waffing\/CoursePilot-AI-Private\/main\/course-helper\.meta\.js/);
+ assert.match(meta,/@downloadURL\s+https:\/\/raw\.githubusercontent\.com\/Waffing\/CoursePilot-AI-Private\/main\/course-helper\.user\.js/);
+ assert.match(meta,/@author\s+Waffing/);assert.match(meta,/@namespace\s+noshuang/);
+});
+test('distribution contains no old notice request or announcement component',()=>{
+ const full=fs.readFileSync(path.join(__dirname,'..','course-helper.user.js'),'utf8');
+ assert(!full.includes('https://api.tikuhai.com/def/notice'));assert(!full.includes('getNotice'));assert(!full.includes('announcements.value'));
+ assert(!/^\/\/ @antifeature\s+ads/m.test(full));
+});

@@ -1,0 +1,19 @@
+{
+  "version": "0.2.9.9",
+  "checks": {
+    "tests": 147,
+    "pass": 147,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "publicCoreChecks": 10,
+  "environment": "isolated-headless-edge",
+  "browserVersion": "157.0.4341.42",
+  "announcementsRemoved": true,
+  "oldNoticeRequests": 0,
+  "authorDisplay": "Waffing",
+  "updateMetadataMatches": true,
+  "realManagerAutoUpdateObserved": false,
+  "authenticatedCourseAcceptanceVerified": false
+}

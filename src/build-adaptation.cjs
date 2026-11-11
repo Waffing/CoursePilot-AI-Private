@@ -7,7 +7,7 @@ function replaceOnce(needle, replacement) {
   if (begin < 0 || source.indexOf(needle, begin + needle.length) >= 0) throw new Error('Ambiguous patch: ' + needle.slice(0, 100));
   source = source.slice(0, begin) + replacement + source.slice(begin + needle.length);
 }
-replaceOnce('// @version      0.2.8.2', '// @version      0.2.9.8');
+replaceOnce('// @version      0.2.8.2', '// @version      0.2.9.9');
 replaceOnce('// @author       isMobile', '// @author       Waffing');
 replaceOnce('// @description  支持多家大模型、自动获取模型列表和联网搜索，保留原版超星与智慧树的题目填写、视频、章节切换和提交机制。', '// @description  多平台网课小助手：视频学习、随堂和题库练习、大模型与图片答题，支持可选倍速、个性化界面、请求间隔与失败冷却、暂停恢复、单题重试和本页答案缓存。');
 replaceOnce("(function (vue, pinia, rxjs, md5, ElementPlus) {\n  'use strict';".replace(/\n/g, '\r\n'), "(function (vue, pinia, rxjs, md5, ElementPlus) {\n  'use strict';\n  const helperPage = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;\n  if (helperPage.location.hostname === 'bbgu.jcedutec.cn' && helperPage.top === helperPage.self) {\n    if (helperPage.__courseHelperMount291) return;\n    helperPage.__courseHelperMount291 = true;\n  }");
@@ -82,7 +82,7 @@ replaceOnce('            }, 8, ["data"])', `            }, 8, ["data"]),
               page: selectedHistoryPage.value, pages: historyPages.value, total: _ctx.questionList.length,
               onSelect: (value) => historyPage.value = value
             }, null, 8, ["page", "pages", "total"])`);
-replaceOnce('// @version      0.2.9.8', '// @version      0.2.9.8\n// @downloadURL  https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js\n// @updateURL    https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js');
+replaceOnce('// @version      0.2.9.9', '// @version      0.2.9.9\n// @downloadURL  https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js\n// @updateURL    https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.meta.js\n// @homepageURL  https://github.com/Waffing/CoursePilot-AI-Private\n// @supportURL   https://github.com/Waffing/CoursePilot-AI-Private/issues');
 replaceOnce('    const settings = cloneLatestValue(configStore.queryApis[0]);', '    const settings = cloneLatestValue(context.settings || configStore.queryApis[0]);');
 replaceOnce('    publicConfig.queryApis[0].token = "";', '    _GM_setValue("greasyfork-488083-helper-fallback-key", config2.helperFallbackModel?.token || "");\n    if (publicConfig.helperFallbackModel) publicConfig.helperFallbackModel.token = "";\n    publicConfig.queryApis[0].token = "";');
 replaceOnce('      globalConfig.modelSearch.token = _GM_getValue(SEARCH_API_KEY_STORAGE_KEY, "");', '      globalConfig.helperFallbackModel.token = _GM_getValue("greasyfork-488083-helper-fallback-key", "");\n      globalConfig.modelSearch.token = _GM_getValue(SEARCH_API_KEY_STORAGE_KEY, "");');
@@ -90,5 +90,13 @@ replaceOnce('  const DEFAULT_CARD_WIDTH = "310px";', fs.readFileSync(path.join(_
 replaceOnce('vue.createVNode(ModelSearchSources, { info: scope.row.searchInfo }, null, 8, ["info"])', 'vue.createVNode(ModelSearchSources, { info: scope.row.searchInfo }, null, 8, ["info"]),\n                      scope.row.submissionStatus ? vue.h("div", { class: "helper-submission" }, scope.row.submissionStatus) : null');
 replaceOnce('        { keyword: "/stuExamWeb.html", logic: useZhsAnswerLogic }', '        { keyword: "/stuExamWeb.html", logic: useZhsAnswerLogic },\n        { keyword: "bbgu.jcedutec.cn", logic: useJcedutecLogic }');
 replaceOnce('        { keyword: "zhihuishu", platformName: "zhs" }', '        { keyword: "zhihuishu", platformName: "zhs" },\n        { keyword: "bbgu.jcedutec.cn", platformName: "jcedutec" }');
+replaceOnce(source.slice(source.indexOf('  const _hoisted_1$6 ='), source.indexOf('  const sleep =')), '');
+replaceOnce(source.slice(source.indexOf('  const NOTICE_API_URL ='), source.indexOf('  const getAnswer =')), '');
+replaceOnce(source.slice(source.indexOf('  const toAnnouncementItems ='), source.indexOf('  const _hoisted_1$5 =')), '');
+replaceOnce('      const announcements = vue.ref([]);\r\n      vue.onMounted(async () => {\r\n        announcements.value = await getNotice();\r\n      });\r\n', '');
+replaceOnce('          vue.createVNode(_sfc_main$9, { items: announcements.value }, null, 8, ["items"]),\r\n', '');
+replaceOnce('// @antifeature  ads      公众号或者app辅助答题\r\n', '');
+source = source.replace(/\.main-page \.announcement-[a-z-]+(?::before)?\{[^}]*\}/g, '');
+fs.writeFileSync(path.join(root, 'course-helper.meta.js'), source.slice(0, source.indexOf('// ==/UserScript==') + '// ==/UserScript=='.length) + '\n', 'utf8');
 fs.writeFileSync(path.join(root, 'course-helper.user.js'), source, 'utf8');
 console.log('Built adaptation, bytes:', Buffer.byteLength(source));
