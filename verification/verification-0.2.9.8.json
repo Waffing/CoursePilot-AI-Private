@@ -1,0 +1,20 @@
+{
+  "version": "0.2.9.8",
+  "environment": "isolated-headless-edge",
+  "browserVersion": "157.0.4341.42",
+  "nodeVersion": "24.18.0",
+  "checks": {
+    "tests": 143,
+    "pass": 143,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "publicCoreChecks": {
+    "tests": 8,
+    "pass": 8
+  },
+  "realUserscriptManagerInstallVerified": false,
+  "authenticatedCourseAcceptanceVerified": false,
+  "realProviderKeysUsed": false
+}

@@ -1,0 +1,16 @@
+✔ export excludes credentials, URL query and custom prompts (5.8834ms)
+✔ import previews changes before application and preserves existing credentials (5.0936ms)
+✔ invalid backup and cross-origin credential reuse are rejected (4.6137ms)
+✔ diagnostics hide known keys, bearer tokens, URL credentials and account identifiers (6.3809ms)
+✔ shared request state carries cooldown across independent page pacers (4.029ms)
+✔ cancelling a queued request prevents reserving another call (4.0559ms)
+✔ tab ownership waits for claims, transfers explicitly and retains minimal submission records (389.6128ms)
+✔ a 15-second deadline aborts the pending call and switches to the next configured model (15.749ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 628.5991

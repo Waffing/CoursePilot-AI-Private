@@ -46,20 +46,22 @@
     const cache = new Map();
     const submissions = new Map();
     let status = { label: "需要人工处理", detail: "等待课程或练习页面", canRetry: false, paused: false, cacheSize: 0 };
-    const enabled = () => options.settings().enabled && !manualPaused;
-    const requestPacer = createHelperRequestPacer({
+    const ownsPage = () => options.canRun?.() ?? true;
+    const enabled = () => options.settings().enabled && !manualPaused && ownsPage();
+    const requestPacer = options.requestPacer || createHelperRequestPacer({
       interval: () => Math.max(0, options.requestInterval?.() || 0),
       onWait: (seconds, cooling) => publish(cooling ? "请求冷却" : "等待请求", `${cooling ? "接口暂时不可用" : "按请求间隔等待"}，${seconds} 秒后可继续`)
     });
     const speedController = createVideoSpeedController(pageWindow, {isEnabled: () => options.settings().speed === true, initialRate: options.initialSpeed, saveRate: options.saveSpeed, log, onStatus: () => options.onSpeedStatus?.(speedController.getStatus())});
     const examFlow = createExamFlow(pageWindow, {
       getView: () => isExam() ? findView() : null, isCurrent: (state) => current(state),
+      sharedReceipts: options.sharedReceipts,
       settings: options.settings, delay: options.delay, button, publish: (...args) => publish(...args), log,
       allowed: () => !disposed && !suspended && enabled() && !blocked() && isExam(),
       onSubmit: () => cancelQuestion("网站已发出交卷请求")
     });
     const publish = (label, detail = "", canRetry = false) => {
-      status = { label, detail, canRetry, paused: !enabled() || suspended, cacheSize: cache.size, speedText: speedController.getStatus(), speedRates: speedController.getRates(), selectedSpeed: speedController.getSelectedRate(), speedEnabled: options.settings().speed === true };
+      status = { label, detail, canRetry, paused: !enabled() || suspended, standby: !ownsPage(), cacheSize: cache.size, speedText: speedController.getStatus(), speedRates: speedController.getRates(), selectedSpeed: speedController.getSelectedRate(), speedEnabled: options.settings().speed === true };
       options.onStatus?.({ ...status });
     };
     const blocked = () => Array.from(doc.querySelectorAll(".geetest_panel, .geetest_holder, .yidun_popup, [class*='captcha']")).some(visible) ||
@@ -139,6 +141,7 @@
           if (request.kind === "finish") completion.set(key, { success, result, message, source, at: Date.now() });
           else if (state) {
             state.receipt = result;
+            options.sharedReceipts?.record(state.parsed.key, result);
             state.receiptMessage = message;
             state.question.submissionStatus = success ? "网站已接受提交" : rejected ? "网站拒绝提交" : "提交尚未确认";
             log(state.question.submissionStatus + (rejected && message ? `：${message}` : ""), success ? "success" : "warning");
@@ -152,13 +155,23 @@
     prototype.open = observedOpen;
     prototype.send = observedSend;
 
+    let parsedQuestion = null;
+    let parsedIdentity = "";
+    const questionObserver = new pageWindow.MutationObserver(() => { parsedQuestion = null; options.onWake?.(); });
     function findQuestion() {
+      if (questionObserver.takeRecords().length) parsedQuestion = null;
       if (!isCourse() && !isPractice() && !isExam()) return null;
       const expected = isCourse() ? "视频习题" : "开始练习";
       const roots = isExam() ? Array.from(doc.querySelectorAll(".exam-modal")).filter(visible) :
         Array.from(doc.querySelectorAll(".ant-modal-content")).filter((root) => visible(root) && text(root.querySelector(".ant-modal-title")) === expected);
-      if (roots.length !== 1) return null;
+      if (roots.length !== 1) { questionObserver.disconnect(); parsedQuestion = null; return null; }
       const root = roots[0];
+      const identityView = findView();
+      const identitySignature = JSON.stringify([pageWindow.location.href, identityView?.questionId, identityView?.model?.id, identityView?.recordId, identityView?.form?.id, identityView?.index]);
+      if (parsedQuestion?.root === root && parsedIdentity === identitySignature && parsedQuestion.choices.every((choice) => choice.input.isConnected && choice.input.value === choice.value)) return parsedQuestion;
+      questionObserver.disconnect();
+      questionObserver.observe(root, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["src", "value", "type"]});
+      parsedIdentity = identitySignature;
       const heading = root.querySelector(isCourse() ? ".sub-title" : ".stem");
       const inputs = Array.from(root.querySelectorAll('.can-scroll input[type="radio"], .can-scroll input[type="checkbox"]'));
       if (!heading || inputs.length < 2 || inputs.length > 12) return null;
@@ -195,7 +208,7 @@
       const currentView = findView();
       const identity = isCourse() ? [currentView?.model?.id, currentView?.questionId] : isExam() ? [currentView?.recordId, currentView?.model?.id, currentView?.index] : [currentView?.form?.id, currentView?.index];
       const key = JSON.stringify([pageWindow.location.href, ...identity, stem, kind, choices.map((choice) => [choice.value, choice.text]), images]);
-      return { root, key, choices, images, question: {
+      return parsedQuestion = { root, key, choices, images, question: {
         title: escapeHtml(stem), type: kind, optionsText: choices.map((choice) => `${choice.value}. ${choice.text}`),
         searchText: { stem, options: choices.map((choice) => choice.text) }, answer: [], answerStatus: "searching"
       } };
@@ -205,6 +218,7 @@
       if (!active) return;
       if (preserveSubmitted && ["submitted", "exam-confirming", "exam-sent"].includes(active.phase)) return;
       active.controller.abort();
+      if (["submitted", "exam-confirming", "exam-sent"].includes(active.phase)) active.parsed = {key: active.parsed.key};
       if (active.question.answerStatus === "searching") {
         active.question.answerStatus = "error";
         active.question.answer = [message];
@@ -232,6 +246,12 @@
       if (active && (active.parsed.key !== parsed.key || active.parsed.root !== parsed.root || active.model !== options.modelIdentity()))
         cancelQuestion("题目或模型配置已改变，已取消旧请求");
       if (!active) {
+        const shared = options.sharedReceipts?.get(parsed.key);
+        if (shared && !submissions.has(parsed.key)) {
+          const previous = {parsed, model: options.modelIdentity(), controller: new AbortController(), phase: "submitted", targets: [], at: shared.at, receipt: shared.status,
+            question: options.addQuestion({...parsed.question, answer: [], answerStatus: "pending", submissionStatus: "已有提交记录，请核对网站结果"})};
+          submissions.set(parsed.key, previous);
+        }
         const sent = submissions.get(parsed.key);
         if (sent) {
           active = sent;
@@ -241,12 +261,13 @@
       }
       if (!active) {
         const state = active = { parsed, model: options.modelIdentity(), controller: new AbortController(), phase: "resolving", targets: [], at: Date.now(), warned: false, cacheKey: cacheKey(parsed) };
-        state.question = options.addQuestion(parsed.question);
+        state.question = options.addQuestion({...parsed.question, answer: [], answerStatus: "searching"});
         publish("查询答案", "正在调用已配置的模型");
         log("检测到题目，正在准备答案");
         try {
           const context = { signal: state.controller.signal, isCurrent: () => current(state), skipDelay: true };
-          context.beforeRequest = () => requestPacer.beforeRequest(context);
+          context.beforeRequest = (candidate = context) => requestPacer.beforeRequest(candidate);
+          context.onQueryStatus = (detail) => publish("查询答案", detail);
           if (parsed.images.length) {
             if (!options.loadImages) throw new Error("该题包含图片，请配置支持图片的模型后重试");
             state.question.imageAssets = await options.loadImages(parsed.images, context);
@@ -255,7 +276,7 @@
           const response = saved ? { success: true, data: {items: [{answer: {values: [...saved]}}]}, meta: null } :
             await options.resolve(state.question, context);
           if (!current(state)) return;
-          if (!saved) requestPacer.record(response);
+          if (!saved && !options.requestPacer) requestPacer.record(response);
           const answers = response?.success ? response.data?.items?.[0]?.answer?.values : null;
           if (!answers?.length) throw new Error(response?.error?.message || "模型没有给出可用答案");
           const targets = answers.map((answer) => {
@@ -322,6 +343,13 @@
         if (!selected(state)) { state.phase = "blocked"; state.question.answer = ["答案被手动修改，已停止自动提交"]; publish("需要人工处理", state.question.answer[0], true); log(state.question.answer[0], "warning"); return; }
         const submit = button(parsed.root, "提交") || (isPractice() && options.settings().nextQuestion ? button(parsed.root, "下一题") : null);
         if (!submit) return;
+        if (!current(state)) return;
+        if (options.sharedReceipts?.reserve(parsed.key) === false) {
+          state.phase = "submitted"; state.at = Date.now(); state.receipt = "unknown";
+          submissions.set(parsed.key, state);
+          publish("需要人工处理", "其他页面已有提交记录，请核对网站结果；不会重复提交");
+          return;
+        }
         state.phase = "submitted";
         state.at = Date.now();
         state.receipt = "pending";
@@ -471,6 +499,13 @@
         videoSource = "";
         navigation = null;
       }
+      if (!ownsPage()) {
+        cancelQuestion("已由其他标签页接管", true);
+        if (wasEnabled) pauseVideo();
+        wasEnabled = false;
+        publish("另一标签页运行中", "点击“在此页接管”后继续；原页面会停止操作");
+        return;
+      }
       if (!enabled() || !settings.answer) cancelQuestion("自动答题已关闭", true);
       if (!enabled()) { if (wasEnabled) pauseVideo(); wasEnabled = false; publish("已暂停", "助手和视频已暂停"); return; }
       if (!wasEnabled) { wasEnabled = true; playBlocked = ""; }
@@ -544,6 +579,7 @@
     function dispose() {
       disposed = true; playAttempt = null;
       speedController.dispose();
+      questionObserver.disconnect(); parsedQuestion = null;
       cancelQuestion("助手已停止");
       if (prototype.open === observedOpen) prototype.open = originalOpen;
       if (prototype.send === observedSend) prototype.send = originalSend;

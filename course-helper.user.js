@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树--网课小助手【大模型版】
 // @namespace    noshuang
-// @version      0.2.9.7
-// @author       isMobile
+// @version      0.2.9.8
+// @downloadURL  https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js
+// @updateURL    https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js
+// @author       Waffing
 // @description  多平台网课小助手：视频学习、随堂和题库练习、大模型与图片答题，支持可选倍速、个性化界面、请求间隔与失败冷却、暂停恢复、单题重试和本页答案缓存。
 // @license      MIT
 // @icon         data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='54' text-anchor='middle' dominant-baseline='central' font-size='82' font-family='Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif'%3E%F0%9F%92%AF%3C/text%3E%3C/svg%3E
@@ -330,7 +332,15 @@
     return { url: getModelEndpoint(settings.url, protocol, "answer", settings.model), headers: getModelHeaders(settings), method: "POST", data: JSON.stringify(body) };
   };
   const requestModelJson = async (options, context = {}, timeout = 120000) => {
+    const sharedPacer = typeof getSharedHelperPacer === "function" && typeof location !== "undefined" && location.hostname === "bbgu.jcedutec.cn" ? getSharedHelperPacer() : null;
+    if (sharedPacer && helperTabCoordinator && !helperTabCoordinator.isOwner()) return apiError("另一标签页正在运行，请在该页操作或接管后重试");
+    if (sharedPacer && !context.beforeRequest) {
+      const previousContext = context;
+      context = {...context, isCurrent: () => (!helperTabCoordinator || helperTabCoordinator.isOwner()) && (previousContext.isCurrent?.() ?? true)};
+      context.beforeRequest = () => sharedPacer.beforeRequest(context);
+    }
     if (context.beforeRequest && !await context.beforeRequest()) return apiError("请求已取消");
+    context.onRequestStart?.();
     return new Promise((resolve) => {
     let request;
     let settled = false;
@@ -339,6 +349,7 @@
       if (settled) return;
       settled = true;
       context.signal?.removeEventListener("abort", abort);
+      if (sharedPacer) sharedPacer.record(result);
       resolve(result);
     };
     const abort = () => {
@@ -995,6 +1006,8 @@
     const settings = cloneLatestValue(config2.queryApis[0]);
     _GM_setValue(MODEL_PROFILES_STORAGE_KEY, { ...(isObject(profiles) ? profiles : {}), [settings.provider || "custom"]: settings });
     _GM_setValue(SEARCH_API_KEY_STORAGE_KEY, config2.modelSearch.token);
+    _GM_setValue("greasyfork-488083-helper-fallback-key", config2.helperFallbackModel?.token || "");
+    if (publicConfig.helperFallbackModel) publicConfig.helperFallbackModel.token = "";
     publicConfig.queryApis[0].token = "";
     publicConfig.modelSearch.token = "";
     const serializedConfig = JSON.stringify(publicConfig);
@@ -1024,6 +1037,7 @@
         },
         menuIndex: "0",
         platformName: "cx",
+        helperFallbackModel: { enabled: true, waitSeconds: 15, protocol: "chat", url: "", model: "", token: "" },
         helperPreferences: { theme: "system", density: "comfortable", fontSize: 13, panelWidth: 360, opacity: 100, requestInterval: 5, actionDelay: 3 },
         platformParams: {
           cx: {
@@ -1151,6 +1165,7 @@
       }
       const profiles = _GM_getValue(MODEL_PROFILES_STORAGE_KEY, {});
       globalConfig.queryApis[0].token = profiles?.[globalConfig.queryApis[0].provider]?.token ?? _GM_getValue(MODEL_API_KEY_STORAGE_KEY, "");
+      globalConfig.helperFallbackModel.token = _GM_getValue("greasyfork-488083-helper-fallback-key", "");
       globalConfig.modelSearch.token = _GM_getValue(SEARCH_API_KEY_STORAGE_KEY, "");
       persistConfig(globalConfig);
       return globalConfig;
@@ -1185,6 +1200,7 @@
           type
         };
         this.logList.push(log);
+        if (helperPage.location.hostname === "bbgu.jcedutec.cn" && this.logList.length > 300) this.logList.splice(0, this.logList.length - 300);
       }
     }
   });
@@ -1259,7 +1275,7 @@
     const isCurrent = () => !context.signal?.aborted && (context.isCurrent?.() ?? true);
     if (!isCurrent()) return apiError("请求已取消");
     const configStore = useConfigStore();
-    const settings = cloneLatestValue(configStore.queryApis[0]);
+    const settings = cloneLatestValue(context.settings || configStore.queryApis[0]);
     const search = cloneLatestValue(configStore.modelSearch);
     if (!settings.url?.trim() || !settings.model?.trim())
       return apiError("请先在答题页填写模型接口地址和模型名，再刷新页面");
@@ -1679,6 +1695,22 @@
   const _hoisted_3$1 = ["innerHTML"];
   const _hoisted_4$2 = { key: 0 };
   const _hoisted_5 = { key: 1 };
+  const HelperHistoryPager = vue.defineComponent({
+    props: ["page", "pages", "total"],
+    emits: ["select"],
+    setup(props, {emit}) {
+      return () => vue.h("nav", {
+        class: "helper-history-pages", "aria-label": "答题历史分页",
+        hidden: helperPage.location.hostname !== "bbgu.jcedutec.cn" || props.pages <= 1
+      }, [
+        vue.h("button", {type: "button", disabled: props.page <= 1, onClick: () => emit("select", props.page - 1)}, "上一页"),
+        vue.h("span", null, `第 ${props.page} / ${props.pages} 页 · 共 ${props.total} 题`),
+        vue.h("button", {type: "button", disabled: props.page >= props.pages, onClick: () => emit("select", props.page + 1)}, "下一页"),
+        vue.h("button", {type: "button", onClick: () => emit("select", 0)}, "最新")
+      ]);
+    }
+  });
+
   const _sfc_main$6 = /* @__PURE__ */ vue.defineComponent({
     __name: "QuestionTable",
     props: {
@@ -1689,6 +1721,10 @@
         var _a;
         return ((_a = question.searchText) == null ? void 0 : _a.stem) || question.title;
       };
+      const historyPage = vue.ref(0);
+      const historyPages = vue.computed(() => Math.max(1, Math.ceil(__props.questionList.length / 100)));
+      const selectedHistoryPage = vue.computed(() => Math.min(historyPages.value, historyPage.value || historyPages.value));
+      const pagedQuestions = vue.computed(() => helperPage.location.hostname === "bbgu.jcedutec.cn" ? __props.questionList.slice((selectedHistoryPage.value - 1) * 100, selectedHistoryPage.value * 100) : __props.questionList);
       const getAnswerStatus = (question) => question.answerStatus ?? (question.answer.length ? "success" : "pending");
       return (_ctx, _cache) => {
         const _component_el_table_column = vue.resolveComponent("el-table-column");
@@ -1700,7 +1736,7 @@
             _hoisted_2$3,
             vue.createVNode(_component_el_table, {
               stripe: "",
-              data: _ctx.questionList,
+              data: pagedQuestions.value,
               "max-height": "400",
               class: "question-list"
             }, {
@@ -1742,7 +1778,11 @@
                 })
               ]),
               _: 1
-            }, 8, ["data"])
+            }, 8, ["data"]),
+            vue.createVNode(HelperHistoryPager, {
+              page: selectedHistoryPage.value, pages: historyPages.value, total: _ctx.questionList.length,
+              onSelect: (value) => historyPage.value = value
+            }, null, 8, ["page", "pages", "total"])
           ], 512), [
             [vue.vShow, _ctx.questionList.length]
           ]),
@@ -7195,7 +7235,7 @@
     { key: "fontSize", label: "文字大小", type: "number", default: 13, min: 12, max: 18, step: 1, unit: "px", help: "默认 13 px，调整窗口正文和控件文字" },
     { key: "panelWidth", label: "面板宽度", type: "number", default: 360, min: 300, max: 560, step: 10, unit: "px", help: "默认 360 px，答题页适度加宽，小窗口自动收拢" },
     { key: "opacity", label: "窗口不透明度", type: "number", default: 100, min: 80, max: 100, step: 5, unit: "%", help: "默认 100%，降低后可看到窗口后方内容" },
-    { key: "requestInterval", label: "请求最小间隔", type: "number", default: 5, min: 2, max: 120, step: 1, unit: "秒", help: "默认 5 秒，限制自动模型、搜索和图片请求；站点限流时仍需冷却" },
+    { key: "requestInterval", label: "请求最小间隔", type: "number", default: 5, min: 2, max: 120, step: 1, unit: "秒", help: "默认 5 秒，模型、搜索和图片请求共用间隔；获取模型和连接测试也会排队" },
     { key: "actionDelay", label: "操作等待时间", type: "number", default: 3, min: 1, max: 120, step: 1, unit: "秒", help: "默认 3 秒，用于题库／试卷；视频弹题和完成后切课无额外等待" }
   ];
 
@@ -7212,13 +7252,24 @@
     let lastStart = null;
     let cooldownUntil = 0;
     let failures = 0;
-    const remaining = () => Math.max(0, cooldownUntil - Date.now());
+    const storageKey = "noshuang.helper.network.v1";
+    const sync = () => {
+      try {
+        const saved = JSON.parse(options.storage?.getItem(storageKey) || "null");
+        if (saved && Number.isFinite(saved.lastStart)) lastStart = Math.max(lastStart || 0, saved.lastStart);
+        if (saved && Number.isFinite(saved.cooldownUntil)) cooldownUntil = Math.max(cooldownUntil, saved.cooldownUntil);
+        if (saved && Number.isFinite(saved.failures)) failures = Math.max(0, Math.min(6, saved.failures));
+      } catch {}
+    };
+    const save = () => { try { options.storage?.setItem(storageKey, JSON.stringify({lastStart, cooldownUntil, failures})); } catch {} };
+    const remaining = () => { sync(); return Math.max(0, cooldownUntil - Date.now()); };
     async function beforeRequest(context) {
-      const current = () => !context.signal?.aborted && context.isCurrent();
+      const current = () => !context.signal?.aborted && (context.isCurrent?.() ?? true);
       while (current()) {
+        sync();
         const until = Math.max(lastStart === null ? 0 : lastStart + options.interval(), cooldownUntil);
         const ms = until - Date.now();
-        if (ms <= 0) { lastStart = Date.now(); return true; }
+        if (ms <= 0) { lastStart = Date.now(); save(); return true; }
         options.onWait?.(Math.ceil(ms / 1000), remaining() > 0);
         await new Promise((resolve) => {
           const finish = () => { clearTimeout(timer); context.signal?.removeEventListener("abort", finish); resolve(); };
@@ -7230,14 +7281,270 @@
       return false;
     }
     function record(result) {
-      if (result?.success) { failures = 0; return; }
+      sync();
+      if (result?.success) { failures = 0; save(); return; }
       const code = result?.error?.code || "";
       if (!/^HTTP_(429|5\d\d)$/.test(code) && !/请求超时|请求失败|网络/.test(result?.error?.message || "")) return;
       failures = Math.min(failures + 1, 6);
       const seconds = Math.max(Math.min(300, 15 * 2 ** (failures - 1)), Number(result.retryAfterSeconds) || 0);
       cooldownUntil = Math.max(cooldownUntil, Date.now() + seconds * 1000);
+      save();
     }
     return {beforeRequest, record, remaining};
+  }
+
+  function createHelperCoordinator(pageWindow, onChange) {
+    const ownerKey = "noshuang.helper.owner.v1";
+    const receiptKey = "noshuang.helper.receipts.v1";
+    const id = pageWindow.crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+    let settled = false;
+    let active = true;
+    let disposed = false;
+    let timer = null;
+    let storageError = false;
+    const read = (key) => {
+      try { return JSON.parse(pageWindow.localStorage.getItem(key) || "null"); }
+      catch { storageError = true; return null; }
+    };
+    const write = (key, value) => {
+      try { pageWindow.localStorage.setItem(key, JSON.stringify(value)); return true; }
+      catch { storageError = true; return false; }
+    };
+    const isOwner = () => !disposed && active && settled && !storageError && read(ownerKey)?.id === id;
+    function claim(force = false) {
+      if (disposed || !active) return;
+      storageError = false;
+      clearTimeout(timer);
+      const previous = read(ownerKey);
+      if (!force && previous && previous.id !== id) { settled = false; onChange?.(); return; }
+      settled = false;
+      if (!write(ownerKey, {id})) { onChange?.(); return; }
+      onChange?.();
+      // No action is allowed until simultaneous startup claims have settled.
+      timer = setTimeout(() => { settled = true; onChange?.(); }, 150);
+    }
+    function release() {
+      settled = false;
+      clearTimeout(timer);
+      try { if (read(ownerKey)?.id === id) pageWindow.localStorage.removeItem(ownerKey); }
+      catch { storageError = true; }
+    }
+    const onStorage = (event) => {
+      if (disposed || !active || event.key !== ownerKey && event.key !== null) return;
+      if (!read(ownerKey)) claim(); else onChange?.();
+    };
+    pageWindow.addEventListener("storage", onStorage);
+    claim();
+    return {
+      isOwner,
+      hasStorageError: () => storageError,
+      takeover: () => claim(true),
+      suspend() { active = false; release(); },
+      restore() { active = true; claim(); },
+      getReceipt(key) { return read(receiptKey)?.[key] || null; },
+      reserve(key) {
+        if (!isOwner()) return false;
+        const receipts = read(receiptKey) || {};
+        if (receipts[key]) return false;
+        receipts[key] = {status: "pending", at: Date.now()};
+        return write(receiptKey, receipts) && isOwner();
+      },
+      record(key, status) {
+        const receipts = read(receiptKey) || {};
+        if (!receipts[key]) return;
+        receipts[key].status = status;
+        write(receiptKey, receipts);
+      },
+      dispose() { disposed = true; release(); pageWindow.removeEventListener("storage", onStorage); }
+    };
+  }
+
+  let sharedHelperPacer = null;
+  let helperTabCoordinator = null;
+  function getSharedHelperPacer() {
+    if (!sharedHelperPacer) sharedHelperPacer = createHelperRequestPacer({
+      interval: () => getHelperPreferences(useConfigStore().helperPreferences).requestInterval * 1000,
+      storage: window.localStorage,
+      onWait: (seconds, cooling) => helperNetworkStatus?.(seconds, cooling)
+    });
+    return sharedHelperPacer;
+  }
+  let helperNetworkStatus = null;
+
+  function createHelperSettingsBackup(config) {
+    const model = config.queryApis?.[0] || {};
+    const allowedModelFields = ["provider", "protocol", "model", "autoModels", "timeout", "maxTokens", "temperature", "temperatureEnabled"];
+    const modelSettings = Object.fromEntries(allowedModelFields.filter((key) => model[key] !== undefined).map((key) => [key, model[key]]));
+    if (model.url) {
+      const url = new URL(model.url);
+      if (!["http:", "https:"].includes(url.protocol)) throw new Error("模型地址必须为 HTTP 或 HTTPS");
+      modelSettings.url = url.origin + url.pathname;
+    }
+    const params = config.platformParams?.jcedutec?.parts?.[0]?.params || [];
+    const rawFallback = config.helperFallbackModel;
+    const fallback = rawFallback ? {enabled: rawFallback.enabled, waitSeconds: rawFallback.waitSeconds, protocol: rawFallback.protocol, model: rawFallback.model,
+      url: rawFallback.url ? new URL(rawFallback.url).origin + new URL(rawFallback.url).pathname : ""} : undefined;
+    return {
+      format: "course-helper-settings", version: 1,
+      preferences: getHelperPreferences(config.helperPreferences),
+      model: modelSettings, ...(fallback ? {fallback} : {}),
+      platform: Object.fromEntries(params.map((param) => [param.name, param.value]))
+    };
+  }
+
+  function prepareHelperSettingsImport(input, config) {
+    if (typeof input !== "string" || input.length > 65536) throw new Error("请选择不超过 64 KB 的助手设置 JSON 文件");
+    let saved;
+    try { saved = JSON.parse(input); } catch { throw new Error("文件不是有效的 JSON"); }
+    if (saved?.format !== "course-helper-settings" || saved.version !== 1 || !saved.preferences || !saved.model || !saved.platform)
+      throw new Error("不是受支持的助手设置备份");
+    const snapshot = createHelperSettingsBackup(config);
+    const changes = [];
+    const preferences = getHelperPreferences(saved.preferences);
+    for (const field of HELPER_PREFERENCE_FIELDS) if (snapshot.preferences[field.key] !== preferences[field.key]) changes.push(field.label);
+    const model = {};
+    const currentModel = config.queryApis[0];
+    if (currentModel.token && (saved.model.provider && saved.model.provider !== currentModel.provider ||
+        saved.model.url && new URL(saved.model.url).origin !== new URL(currentModel.url).origin))
+      throw new Error("备份使用不同的模型服务，请先手动配置对应接口和 Key，再导入；现有密钥不会迁移到其他服务");
+    for (const key of ["provider", "protocol", "model", "url", "autoModels", "timeout", "maxTokens", "temperature", "temperatureEnabled"]) {
+      if (!Object.prototype.hasOwnProperty.call(saved.model, key)) continue;
+      const value = saved.model[key];
+      if (["provider", "protocol", "model", "url"].includes(key)) {
+        if (typeof value !== "string" || value.length > 2048) throw new Error("模型配置格式不正确");
+        if (key === "url" && value) {
+          const url = new URL(value);
+          if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("备份中的模型地址不能包含凭据或查询参数");
+        }
+        if (key === "protocol" && !["chat", "responses", "anthropic", "gemini"].includes(value)) throw new Error("模型协议不受支持");
+      } else if (["autoModels", "temperatureEnabled"].includes(key)) {
+        if (typeof value !== "boolean") throw new Error("模型开关格式不正确");
+      } else if (typeof value !== "number" || !Number.isFinite(value) || key === "timeout" && (value < 10 || value > 300) || key === "maxTokens" && (value < 0 || value > 1000000) || key === "temperature" && (value < 0 || value > 2)) throw new Error("模型参数超出支持范围");
+      model[key] = value;
+      if (snapshot.model[key] !== value) changes.push("模型：" + ({provider:"服务商",protocol:"协议",model:"模型名称",url:"接口地址",autoModels:"自动读取模型",timeout:"超时",maxTokens:"输出长度",temperature:"温度",temperatureEnabled:"启用温度"}[key]));
+    }
+    const platform = [];
+    for (const param of config.platformParams.jcedutec.parts[0].params) {
+      if (!Object.prototype.hasOwnProperty.call(saved.platform, param.name)) continue;
+      const value = saved.platform[param.name];
+      if (typeof value !== typeof param.value || typeof value === "number" && (!Number.isFinite(value) || value < 0 || value > 16)) throw new Error("平台设置格式不正确");
+      if (param.value !== value) changes.push(param.name);
+      platform.push([param, value]);
+    }
+    let fallback = null;
+    if (saved.fallback && config.helperFallbackModel) {
+      const entry = saved.fallback, previous = config.helperFallbackModel;
+      if (typeof entry.enabled !== "boolean" || !Number.isFinite(entry.waitSeconds) || entry.waitSeconds < 5 || entry.waitSeconds > 120 ||
+          !["chat", "responses", "anthropic", "gemini"].includes(entry.protocol) || typeof entry.model !== "string" || entry.model.length > 2048 ||
+          typeof entry.url !== "string" || entry.url.length > 2048) throw new Error("备用接口配置格式不正确");
+      if (entry.url) {
+        const address = new URL(entry.url);
+        if (!["http:", "https:"].includes(address.protocol) || address.username || address.password || address.search || address.hash) throw new Error("备用接口地址不能包含凭据或查询参数");
+        if (previous.token && previous.url && address.origin !== new URL(previous.url).origin) throw new Error("备用接口域名不同，请先手动核对对应 Key");
+      }
+      fallback = Object.fromEntries(["enabled", "waitSeconds", "protocol", "url", "model"].map((key) => [key, entry[key]]));
+      for (const [key, value] of Object.entries(fallback)) if (previous[key] !== value) changes.push("备用接口：" + key);
+    }
+    return {changes, apply() {
+      Object.assign(config.helperPreferences, preferences);
+      Object.assign(config.queryApis[0], model);
+      if (fallback) Object.assign(config.helperFallbackModel, fallback);
+      for (const [param, value] of platform) param.value = value;
+    }};
+  }
+
+  function createHelperDiagnostic(config, state, logs, location) {
+    const secrets = [];
+    const collect = (value) => {
+      if (!value || typeof value !== "object") return;
+      for (const [key, entry] of Object.entries(value)) {
+        if (/token|key|password|secret/i.test(key) && typeof entry === "string" && entry) secrets.push(entry);
+        else if (entry && typeof entry === "object") collect(entry);
+      }
+    };
+    collect({queryApis: config.queryApis, modelSearch: config.modelSearch, helperFallbackModel: config.helperFallbackModel});
+    const redact = (value) => {
+      let result = String(value || "").replace(/<[^>]*>/g, "");
+      for (const secret of secrets.sort((a, b) => b.length - a.length)) {
+        const encoded = secret.replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+        result = result.split(encoded).join("[已隐藏]").split(secret).join("[已隐藏]");
+      }
+      return result.replace(/Bearer\s+[^\s,;"']+/gi, "Bearer [已隐藏]")
+        .replace(/\b(?:sk-|ghp_|github_pat_)[A-Za-z0-9_-]+/g, "[已隐藏]")
+        .replace(/https?:\/\/[^\s<>"']+/g, (value) => { try { const url = new URL(value); return url.origin + url.pathname; } catch { return "[地址已隐藏]"; } })
+        .replace(/\b\d{10,}\b/g, "[编号已隐藏]").slice(0, 500);
+    };
+    return JSON.stringify({
+      version: "0.2.9.8", page: location.origin + location.pathname,
+      state: {label: redact(state.label), detail: redact(state.detail)},
+      preferences: getHelperPreferences(config.helperPreferences),
+      logs: logs.slice(-20).map((item) => ({time: redact(item.time), type: item.type, message: redact(item.message)}))
+    }, null, 2);
+  }
+
+  async function queryHelperAnswer(question, context, options) {
+    const seconds = Math.max(5, Math.min(120, Number(options.waitSeconds) || 15));
+    const current = () => !context.signal?.aborted && (context.isCurrent?.() ?? true);
+    for (let attempt = 0; attempt < 2 && current(); attempt++) {
+      const settings = attempt === 0 ? options.primary : options.fallback || options.primary;
+      const controller = new AbortController();
+      let timer = null;
+      let countdown = null;
+      let deadline = 0;
+      let finished = false;
+      let started = false;
+      let expire;
+      const limit = new Promise((resolve) => { expire = resolve; });
+      const cancel = () => { controller.abort(); expire({success: false, error: {code: "CANCELLED", message: "请求已取消"}}); };
+      context.signal?.addEventListener("abort", cancel, {once: true});
+      const stopTimer = () => { clearTimeout(timer); clearInterval(countdown); };
+      const armTimer = () => {
+        stopTimer();
+        deadline = Date.now() + seconds * 1000;
+        const report = () => context.onQueryStatus?.(`第 ${attempt + 1}/2 次查询 · ${settings.model || "当前模型"} · 最多等待 ${Math.max(0, Math.ceil((deadline - Date.now()) / 1000))} 秒`);
+        report(); countdown = setInterval(report, 1000);
+        timer = setTimeout(() => {
+          finished = true;
+          expire({success: false, error: {code: "HELPER_QUERY_TIMEOUT", message: `等待答案超过 ${seconds} 秒`}});
+          controller.abort();
+        }, seconds * 1000);
+      };
+      const child = {...context, settings, signal: controller.signal,
+        isCurrent: () => !finished && current(),
+        beforeRequest: async () => {
+          if (!started) stopTimer();
+          const allowed = context.beforeRequest ? await context.beforeRequest(child) : true;
+          if (!allowed || !current() || controller.signal.aborted) return false;
+          if (!started) armTimer();
+          return true;
+        },
+        onRequestStart: () => { started = true; }
+      };
+      let result;
+      try {
+        armTimer();
+        if (!current()) cancel();
+        result = await Promise.race([Promise.resolve().then(() => options.resolve(question, child)), limit]);
+      } finally {
+        finished = true; stopTimer();
+        context.signal?.removeEventListener("abort", cancel);
+      }
+      if (!current()) return {success: false, error: {code: "CANCELLED", message: "请求已取消"}};
+      const timedOut = result?.error?.code === "HELPER_QUERY_TIMEOUT" || /请求超时/.test(result?.error?.message || "");
+      if (!timedOut || attempt === 1 || options.enabled === false) return result;
+      context.onQueryStatus?.(options.fallback ? "等待超时，已取消旧请求，改用备用模型" : "等待超时；未配置备用接口，重试当前模型一次");
+      options.log?.(options.fallback ? "答案等待超时，切换到下一模型接口重试" : "答案等待超时，未配置备用接口，原模型仅重试一次", "warning");
+    }
+    return {success: false, error: {code: "CANCELLED", message: "请求已取消"}};
+  }
+
+  function getHelperFallback(config) {
+    const saved = config.helperFallbackModel;
+    if (saved?.url?.trim() && saved?.model?.trim()) return {...saved, provider: "custom"};
+    const primary = config.queryApis[0];
+    const profiles = _GM_getValue(MODEL_PROFILES_STORAGE_KEY, {});
+    return Object.values(profiles || {}).find((entry) => entry?.url?.trim() && entry?.model?.trim() &&
+      JSON.stringify([entry.url, entry.protocol, entry.model]) !== JSON.stringify([primary.url, primary.protocol, primary.model])) || null;
   }
 
   function createVideoSpeedController(pageWindow, options) {
@@ -7396,7 +7703,10 @@
     const currentRun = () => {
       const view = options.getView();
       if (!view?.recordId) return null;
-      if (!runs.has(String(view.recordId))) runs.set(String(view.recordId), {id: String(view.recordId), answers: new Map(), phase: "answering", receipt: "pending", at: 0});
+      if (!runs.has(String(view.recordId))) {
+        const saved = options.sharedReceipts?.get("exam:" + view.recordId);
+        runs.set(String(view.recordId), {id: String(view.recordId), answers: new Map(), phase: saved ? "sent" : "answering", receipt: saved?.status || "pending", at: saved?.at || 0});
+      }
       return runs.get(String(view.recordId));
     };
     const values = (value) => (Array.isArray(value) ? value : value == null ? [] : [value]).map(String).sort();
@@ -7431,6 +7741,7 @@
         let payload;
         try { payload = xhr.responseType === "json" ? xhr.response : JSON.parse(xhr.responseText); } catch {}
         run.receipt = xhr.status >= 200 && xhr.status < 300 && payload?.success === true ? "accepted" : payload?.success === false ? "rejected" : "unknown";
+        options.sharedReceipts?.record("exam:" + id, run.receipt);
         run.message = typeof payload?.message === "string" ? payload.message.slice(0, 200) : "";
         const label = run.receipt === "accepted" ? "网站已接受交卷" : run.receipt === "rejected" ? "网站拒绝交卷" : "交卷尚未确认";
         for (const answer of run.answers.values()) answer.question.submissionStatus = label;
@@ -7480,6 +7791,10 @@
         if (dialogs.length !== 1) return;
         const confirm = Array.from(dialogs[0].querySelectorAll(".ant-modal-confirm-btns button")).find((button) => visible(button) && !button.disabled && /^(确定|OK)$/i.test(text(button)));
         if (!confirm || !options.isCurrent(state)) return;
+        if (options.sharedReceipts?.reserve("exam:" + run.id) === false) {
+          run.phase = "sent"; run.at = Date.now(); run.receipt = "unknown";
+          updateStatus(); return;
+        }
         state.phase = "exam-sent";
         run.phase = "sent";
         run.at = Date.now();
@@ -7540,20 +7855,22 @@
     const cache = new Map();
     const submissions = new Map();
     let status = { label: "需要人工处理", detail: "等待课程或练习页面", canRetry: false, paused: false, cacheSize: 0 };
-    const enabled = () => options.settings().enabled && !manualPaused;
-    const requestPacer = createHelperRequestPacer({
+    const ownsPage = () => options.canRun?.() ?? true;
+    const enabled = () => options.settings().enabled && !manualPaused && ownsPage();
+    const requestPacer = options.requestPacer || createHelperRequestPacer({
       interval: () => Math.max(0, options.requestInterval?.() || 0),
       onWait: (seconds, cooling) => publish(cooling ? "请求冷却" : "等待请求", `${cooling ? "接口暂时不可用" : "按请求间隔等待"}，${seconds} 秒后可继续`)
     });
     const speedController = createVideoSpeedController(pageWindow, {isEnabled: () => options.settings().speed === true, initialRate: options.initialSpeed, saveRate: options.saveSpeed, log, onStatus: () => options.onSpeedStatus?.(speedController.getStatus())});
     const examFlow = createExamFlow(pageWindow, {
       getView: () => isExam() ? findView() : null, isCurrent: (state) => current(state),
+      sharedReceipts: options.sharedReceipts,
       settings: options.settings, delay: options.delay, button, publish: (...args) => publish(...args), log,
       allowed: () => !disposed && !suspended && enabled() && !blocked() && isExam(),
       onSubmit: () => cancelQuestion("网站已发出交卷请求")
     });
     const publish = (label, detail = "", canRetry = false) => {
-      status = { label, detail, canRetry, paused: !enabled() || suspended, cacheSize: cache.size, speedText: speedController.getStatus(), speedRates: speedController.getRates(), selectedSpeed: speedController.getSelectedRate(), speedEnabled: options.settings().speed === true };
+      status = { label, detail, canRetry, paused: !enabled() || suspended, standby: !ownsPage(), cacheSize: cache.size, speedText: speedController.getStatus(), speedRates: speedController.getRates(), selectedSpeed: speedController.getSelectedRate(), speedEnabled: options.settings().speed === true };
       options.onStatus?.({ ...status });
     };
     const blocked = () => Array.from(doc.querySelectorAll(".geetest_panel, .geetest_holder, .yidun_popup, [class*='captcha']")).some(visible) ||
@@ -7633,6 +7950,7 @@
           if (request.kind === "finish") completion.set(key, { success, result, message, source, at: Date.now() });
           else if (state) {
             state.receipt = result;
+            options.sharedReceipts?.record(state.parsed.key, result);
             state.receiptMessage = message;
             state.question.submissionStatus = success ? "网站已接受提交" : rejected ? "网站拒绝提交" : "提交尚未确认";
             log(state.question.submissionStatus + (rejected && message ? `：${message}` : ""), success ? "success" : "warning");
@@ -7646,13 +7964,23 @@
     prototype.open = observedOpen;
     prototype.send = observedSend;
 
+    let parsedQuestion = null;
+    let parsedIdentity = "";
+    const questionObserver = new pageWindow.MutationObserver(() => { parsedQuestion = null; options.onWake?.(); });
     function findQuestion() {
+      if (questionObserver.takeRecords().length) parsedQuestion = null;
       if (!isCourse() && !isPractice() && !isExam()) return null;
       const expected = isCourse() ? "视频习题" : "开始练习";
       const roots = isExam() ? Array.from(doc.querySelectorAll(".exam-modal")).filter(visible) :
         Array.from(doc.querySelectorAll(".ant-modal-content")).filter((root) => visible(root) && text(root.querySelector(".ant-modal-title")) === expected);
-      if (roots.length !== 1) return null;
+      if (roots.length !== 1) { questionObserver.disconnect(); parsedQuestion = null; return null; }
       const root = roots[0];
+      const identityView = findView();
+      const identitySignature = JSON.stringify([pageWindow.location.href, identityView?.questionId, identityView?.model?.id, identityView?.recordId, identityView?.form?.id, identityView?.index]);
+      if (parsedQuestion?.root === root && parsedIdentity === identitySignature && parsedQuestion.choices.every((choice) => choice.input.isConnected && choice.input.value === choice.value)) return parsedQuestion;
+      questionObserver.disconnect();
+      questionObserver.observe(root, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["src", "value", "type"]});
+      parsedIdentity = identitySignature;
       const heading = root.querySelector(isCourse() ? ".sub-title" : ".stem");
       const inputs = Array.from(root.querySelectorAll('.can-scroll input[type="radio"], .can-scroll input[type="checkbox"]'));
       if (!heading || inputs.length < 2 || inputs.length > 12) return null;
@@ -7689,7 +8017,7 @@
       const currentView = findView();
       const identity = isCourse() ? [currentView?.model?.id, currentView?.questionId] : isExam() ? [currentView?.recordId, currentView?.model?.id, currentView?.index] : [currentView?.form?.id, currentView?.index];
       const key = JSON.stringify([pageWindow.location.href, ...identity, stem, kind, choices.map((choice) => [choice.value, choice.text]), images]);
-      return { root, key, choices, images, question: {
+      return parsedQuestion = { root, key, choices, images, question: {
         title: escapeHtml(stem), type: kind, optionsText: choices.map((choice) => `${choice.value}. ${choice.text}`),
         searchText: { stem, options: choices.map((choice) => choice.text) }, answer: [], answerStatus: "searching"
       } };
@@ -7699,6 +8027,7 @@
       if (!active) return;
       if (preserveSubmitted && ["submitted", "exam-confirming", "exam-sent"].includes(active.phase)) return;
       active.controller.abort();
+      if (["submitted", "exam-confirming", "exam-sent"].includes(active.phase)) active.parsed = {key: active.parsed.key};
       if (active.question.answerStatus === "searching") {
         active.question.answerStatus = "error";
         active.question.answer = [message];
@@ -7726,6 +8055,12 @@
       if (active && (active.parsed.key !== parsed.key || active.parsed.root !== parsed.root || active.model !== options.modelIdentity()))
         cancelQuestion("题目或模型配置已改变，已取消旧请求");
       if (!active) {
+        const shared = options.sharedReceipts?.get(parsed.key);
+        if (shared && !submissions.has(parsed.key)) {
+          const previous = {parsed, model: options.modelIdentity(), controller: new AbortController(), phase: "submitted", targets: [], at: shared.at, receipt: shared.status,
+            question: options.addQuestion({...parsed.question, answer: [], answerStatus: "pending", submissionStatus: "已有提交记录，请核对网站结果"})};
+          submissions.set(parsed.key, previous);
+        }
         const sent = submissions.get(parsed.key);
         if (sent) {
           active = sent;
@@ -7735,12 +8070,13 @@
       }
       if (!active) {
         const state = active = { parsed, model: options.modelIdentity(), controller: new AbortController(), phase: "resolving", targets: [], at: Date.now(), warned: false, cacheKey: cacheKey(parsed) };
-        state.question = options.addQuestion(parsed.question);
+        state.question = options.addQuestion({...parsed.question, answer: [], answerStatus: "searching"});
         publish("查询答案", "正在调用已配置的模型");
         log("检测到题目，正在准备答案");
         try {
           const context = { signal: state.controller.signal, isCurrent: () => current(state), skipDelay: true };
-          context.beforeRequest = () => requestPacer.beforeRequest(context);
+          context.beforeRequest = (candidate = context) => requestPacer.beforeRequest(candidate);
+          context.onQueryStatus = (detail) => publish("查询答案", detail);
           if (parsed.images.length) {
             if (!options.loadImages) throw new Error("该题包含图片，请配置支持图片的模型后重试");
             state.question.imageAssets = await options.loadImages(parsed.images, context);
@@ -7749,7 +8085,7 @@
           const response = saved ? { success: true, data: {items: [{answer: {values: [...saved]}}]}, meta: null } :
             await options.resolve(state.question, context);
           if (!current(state)) return;
-          if (!saved) requestPacer.record(response);
+          if (!saved && !options.requestPacer) requestPacer.record(response);
           const answers = response?.success ? response.data?.items?.[0]?.answer?.values : null;
           if (!answers?.length) throw new Error(response?.error?.message || "模型没有给出可用答案");
           const targets = answers.map((answer) => {
@@ -7816,6 +8152,13 @@
         if (!selected(state)) { state.phase = "blocked"; state.question.answer = ["答案被手动修改，已停止自动提交"]; publish("需要人工处理", state.question.answer[0], true); log(state.question.answer[0], "warning"); return; }
         const submit = button(parsed.root, "提交") || (isPractice() && options.settings().nextQuestion ? button(parsed.root, "下一题") : null);
         if (!submit) return;
+        if (!current(state)) return;
+        if (options.sharedReceipts?.reserve(parsed.key) === false) {
+          state.phase = "submitted"; state.at = Date.now(); state.receipt = "unknown";
+          submissions.set(parsed.key, state);
+          publish("需要人工处理", "其他页面已有提交记录，请核对网站结果；不会重复提交");
+          return;
+        }
         state.phase = "submitted";
         state.at = Date.now();
         state.receipt = "pending";
@@ -7965,6 +8308,13 @@
         videoSource = "";
         navigation = null;
       }
+      if (!ownsPage()) {
+        cancelQuestion("已由其他标签页接管", true);
+        if (wasEnabled) pauseVideo();
+        wasEnabled = false;
+        publish("另一标签页运行中", "点击“在此页接管”后继续；原页面会停止操作");
+        return;
+      }
       if (!enabled() || !settings.answer) cancelQuestion("自动答题已关闭", true);
       if (!enabled()) { if (wasEnabled) pauseVideo(); wasEnabled = false; publish("已暂停", "助手和视频已暂停"); return; }
       if (!wasEnabled) { wasEnabled = true; playBlocked = ""; }
@@ -8038,6 +8388,7 @@
     function dispose() {
       disposed = true; playAttempt = null;
       speedController.dispose();
+      questionObserver.disconnect(); parsedQuestion = null;
       cancelQuestion("助手已停止");
       if (prototype.open === observedOpen) prototype.open = originalOpen;
       if (prototype.send === observedSend) prototype.send = originalSend;
@@ -8046,8 +8397,8 @@
   }
   // END JCEDUTEC ADAPTER
 
-const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--helper-soft:#f3f7fb;--helper-text:#20364c;--helper-muted:#60758b;--helper-line:#dbe5ee;--helper-accent:#1269a4;--helper-accent-soft:#e9f3fb;--helper-good:#147d68;--helper-warning:#a76613;--helper-danger:#b64a52;--helper-header:#203b56;--el-color-primary:var(--helper-accent);--el-bg-color:var(--helper-bg);--el-bg-color-overlay:var(--helper-bg);--el-fill-color-blank:var(--helper-bg);--el-fill-color-light:var(--helper-soft);--el-fill-color:var(--helper-soft);--el-text-color-primary:var(--helper-text);--el-text-color-regular:var(--helper-text);--el-text-color-secondary:var(--helper-muted);--el-border-color:var(--helper-line);--el-border-color-light:var(--helper-line);--el-border-color-lighter:var(--helper-line);--el-table-tr-bg-color:var(--helper-bg);--el-font-size-base:var(--helper-font-size);--el-font-size-small:var(--helper-font-size);max-width:calc(100vw - 22px);font-size:var(--helper-font-size);color:var(--helper-text);color-scheme:light}\r\n.main-page[data-helper-ui][data-helper-theme=\"dark\"]{--helper-bg:#182b3d;--helper-soft:#21384d;--helper-text:#e4edf5;--helper-muted:#a2b7ca;--helper-line:#355168;--helper-accent:#8ccaff;--helper-accent-soft:#24445e;--helper-good:#7ad7bd;--helper-warning:#f2c17d;--helper-danger:#ffa6b1;--helper-header:#122234;color-scheme:dark}\r\n.main-page[data-helper-ui] .el-card{box-sizing:border-box;transition:box-shadow .15s ease;display:flex;flex-direction:column;width:var(--helper-panel-width);max-width:calc(100vw - 22px);max-height:calc(100vh - 22px);max-height:calc(100dvh - 22px);border:1px solid var(--helper-line);border-radius:16px;background:var(--helper-bg);box-shadow:0 14px 45px #132e4930,0 2px 8px #132e4912;opacity:var(--helper-opacity);overflow:hidden}\r\n.main-page[data-helper-ui] .el-card__header{flex:none;padding:13px 16px;background:var(--helper-header);color:#fff;border:0}\r\n.main-page[data-helper-ui] .card-header{gap:16px;min-height:22px}\r\n.main-page[data-helper-ui] .card-header .title{justify-content:flex-start;gap:8px;flex-wrap:wrap;font-weight:650;font-size:calc(var(--helper-font-size) + 1px);letter-spacing:.3px}\r\n.main-page[data-helper-ui] .helper-version{font-family:Consolas,monospace!important;font-size:10px;font-weight:400;color:#b4ccdf;letter-spacing:0}\r\n.main-page[data-helper-ui] .warning-icon{display:none}\r\n.main-page[data-helper-ui] .zoom-icon{border-radius:5px;padding:4px;box-sizing:content-box}\r\n.main-page[data-helper-ui] .zoom-icon:hover{background:#ffffff20}\r\n.main-page[data-helper-ui] .el-card__body{min-height:0;max-height:calc(100vh - 80px);max-height:calc(100dvh - 80px);padding:0 var(--helper-space) var(--helper-space);overflow:auto;overscroll-behavior:contain;box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--helper-line) transparent}\r\n.main-page[data-helper-ui] .card_content{width:100%!important;max-width:100%;min-width:0}\r\n.main-page[data-helper-ui] .question_table{width:100%;max-width:100%}\r\n.main-page[data-helper-ui] .helper-toolbar{font-size:var(--helper-font-size);line-height:1.55;padding:var(--helper-space) 0 10px;max-width:100%;box-sizing:border-box;border-bottom:1px solid var(--helper-line)}\r\n.main-page[data-helper-ui] .helper-status-card{padding:11px 12px;border:1px solid var(--helper-line);border-left:3px solid var(--helper-good);border-radius:10px;background:var(--helper-soft)}\r\n.main-page[data-helper-ui] .helper-status{display:flex;align-items:center;gap:7px;font-size:calc(var(--helper-font-size) + 1px);font-weight:650;color:var(--helper-text)}\r\n.main-page[data-helper-ui] .helper-status:before{content:\"\";width:7px;height:7px;border-radius:50%;background:var(--helper-good);flex:none}\r\n.main-page[data-helper-ui] .helper-toolbar[data-state=\"busy\"] .helper-status-card{border-left-color:var(--helper-accent)}\r\n.main-page[data-helper-ui] .helper-toolbar[data-state=\"busy\"] .helper-status:before{background:var(--helper-accent)}\r\n.main-page[data-helper-ui] .helper-toolbar[data-state=\"warning\"] .helper-status-card{border-left-color:var(--helper-warning)}\r\n.main-page[data-helper-ui] .helper-toolbar[data-state=\"warning\"] .helper-status:before{background:var(--helper-warning)}\r\n.main-page[data-helper-ui] .helper-toolbar[data-state=\"paused\"] .helper-status-card{border-left-color:var(--helper-muted)}\r\n.main-page[data-helper-ui] .helper-toolbar[data-state=\"paused\"] .helper-status:before{background:var(--helper-muted)}\r\n.main-page[data-helper-ui] .helper-detail{margin:5px 0 0;color:var(--helper-muted);font-size:var(--helper-font-size);overflow-wrap:anywhere;white-space:normal}\r\n.main-page[data-helper-ui] .helper-speed{font-size:calc(var(--helper-font-size) - 1px)}\r\n.main-page[data-helper-ui] .helper-speed-choice{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0;color:var(--helper-text)}\r\n.main-page[data-helper-ui] .helper-speed-choice select{max-width:65%;min-height:32px;font:inherit;color:var(--helper-accent);border:1px solid var(--helper-line);border-radius:7px;padding:4px 7px;background:var(--helper-bg)}\r\n.main-page[data-helper-ui] .helper-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}\r\n.main-page[data-helper-ui] .helper-actions button{min-width:0;min-height:34px;line-height:1.4;font:inherit;font-size:calc(var(--helper-font-size) - 1px);border:1px solid var(--helper-line);border-radius:8px;background:var(--helper-bg);color:var(--helper-text);padding:6px 4px;cursor:pointer;overflow-wrap:anywhere}\r\n.main-page[data-helper-ui] .helper-actions button:first-child{background:var(--helper-accent-soft);color:var(--helper-accent);border-color:var(--helper-accent)}\r\n.main-page[data-helper-ui] .helper-actions button:hover:not(:disabled){background:var(--helper-soft)}\r\n.main-page[data-helper-ui] .helper-actions button:disabled{opacity:.48;cursor:default}\r\n.main-page[data-helper-ui] .helper-preferences{margin-top:10px;border:1px solid var(--helper-line);border-radius:10px;background:var(--helper-bg);overflow:hidden}\r\n.main-page[data-helper-ui] .helper-preferences summary{padding:9px 11px;color:var(--helper-accent);cursor:pointer;font-weight:600;min-height:22px}\r\n.main-page[data-helper-ui] .helper-preferences[open] summary{border-bottom:1px solid var(--helper-line);background:var(--helper-soft)}\r\n.main-page[data-helper-ui] .helper-preference-list{display:grid;padding:0 11px}\r\n.main-page[data-helper-ui] .helper-preference{display:grid;grid-template-columns:minmax(0,1fr) 112px;align-items:center;gap:5px 12px;padding:10px 0;border-bottom:1px solid var(--helper-line);font-size:var(--helper-font-size)}\r\n.main-page[data-helper-ui] .helper-preference:last-child{border:0}\r\n.main-page[data-helper-ui] .helper-preference input,.main-page[data-helper-ui] .helper-preference select{box-sizing:border-box;width:100%;min-width:0;min-height:32px;border:1px solid var(--helper-line);border-radius:6px;padding:4px 7px;font:inherit;color:var(--helper-text);background:var(--helper-bg)}\r\n.main-page[data-helper-ui] .helper-preference small{grid-column:1/-1;color:var(--helper-muted);font-size:calc(var(--helper-font-size) - 1px);line-height:1.6;overflow-wrap:anywhere}\r\n.main-page[data-helper-ui] :is(button,select,input,summary,.zoom-icon):focus-visible{outline:2px solid var(--helper-accent);outline-offset:2px}\r\n.main-page[data-helper-ui] .helper-submission{font-size:calc(var(--helper-font-size) - 1px);color:var(--helper-muted);margin-top:3px}\r\n.main-page[data-helper-ui] .el-tabs__header{margin-bottom:10px}\r\n.main-page[data-helper-ui] .el-tabs__nav-wrap:after{background:var(--helper-line)}\r\n.main-page[data-helper-ui] .el-tabs__item.is-top{padding:0 10px;font-size:var(--helper-font-size);height:40px;color:var(--helper-muted)}\r\n.main-page[data-helper-ui] .el-tabs__item.is-active{font-weight:650;color:var(--helper-accent)}\r\n.main-page[data-helper-ui] .el-tabs__active-bar{background:var(--helper-accent);height:3px;border-radius:2px}\r\n.main-page[data-helper-ui] .setting-checkbox{display:flex;height:auto;margin:0 0 8px}\r\n.main-page[data-helper-ui] .el-checkbox__label{font-size:var(--helper-font-size);white-space:normal;line-height:1.6}\r\n.main-page[data-helper-ui] .setting .el-form-item{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}\r\n.main-page[data-helper-ui] .el-form-item__label{font-size:var(--helper-font-size);height:auto;line-height:1.8;color:var(--helper-text)}\r\n.main-page[data-helper-ui] :is(.announcement-board,.guide-header,.guide-card,.guide-flow){background:var(--helper-soft);border-color:var(--helper-line);color:var(--helper-text)}\r\n.main-page[data-helper-ui] :is(.announcement-heading,.guide-title,.guide-card-title,.guide-flow-step,.guide-heading-row){color:var(--helper-text)}\r\n.main-page[data-helper-ui] :is(.announcement-item,.guide-page,.guide-subtitle,.guide-copy,.answer-legend){color:var(--helper-muted);font-size:var(--helper-font-size)}\r\n.main-page[data-helper-ui] :is(.guide-number,.guide-flow-number,.guide-tag){color:var(--helper-accent);background:var(--helper-accent-soft);border-color:var(--helper-line)}\r\n.main-page[data-helper-ui] .answer-result--success{color:var(--helper-good)}\r\n.main-page[data-helper-ui] .answer-result--error{color:var(--helper-danger)}\r\n.main-page[data-helper-ui] .answer-result--searching{color:var(--helper-warning)}\r\n.main-page[data-helper-ui] .answer-result--pending{color:var(--helper-muted)}\r\n.main-page[data-helper-ui] .log :is(.el-text,.log-time){font-size:var(--helper-font-size)}\r\n.main-page[data-helper-ui] .log .el-text--success{color:var(--helper-good)}\r\n.main-page[data-helper-ui] .log .el-text--warning{color:var(--helper-warning)}\r\n.main-page[data-helper-ui] .log .el-text--danger{color:var(--helper-danger)}\r\n.main-page[data-helper-ui] :is(.model-settings-title,.model-settings-field>span,.model-settings-toggle){color:var(--helper-text);font-size:var(--helper-font-size)}\r\n.main-page[data-helper-ui] .model-settings{border-color:var(--helper-line)}\r\n.main-page[data-helper-ui] .model-settings-status{color:var(--helper-muted)}\r\n.main-page[data-helper-ui] .model-settings-status.is-error{color:var(--helper-danger)}\r\n.main-page[data-helper-ui] .model-settings-status.is-success{color:var(--helper-good)}\r\n.main-page[data-helper-ui] .log-action-link{color:var(--helper-accent)}\r\n.main-page[data-helper-ui][data-helper-minimized=\"true\"] .el-card{width:260px}\r\n.main-page[data-helper-ui][data-helper-minimized=\"true\"] .el-card__body{padding-top:0;padding-bottom:8px}\r\n.main-page[data-helper-ui][data-helper-density=\"compact\"] .el-card__header{padding:9px 12px}\r\n.main-page[data-helper-ui][data-helper-density=\"compact\"] .helper-status-card{padding:8px 10px}\r\n.main-page[data-helper-ui][data-helper-density=\"compact\"] .helper-preference{padding:7px 0}\r\n.main-page[data-helper-ui][data-helper-density=\"compact\"] .el-tabs__item{height:34px}\r\n@media(max-width:420px){.main-page[data-helper-ui] .helper-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.main-page[data-helper-ui] .helper-actions button:first-child{grid-column:1/-1}.main-page[data-helper-ui] .helper-preference{grid-template-columns:minmax(0,1fr) 102px}.main-page[data-helper-ui] .el-card__header{padding:10px 12px}.main-page[data-helper-ui] .el-tabs__item.is-top{padding:0 8px}}\r\n@media(prefers-reduced-motion:reduce){.main-page[data-helper-ui] *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}\r\n";
-  function mountJcedutecPanel(panel, config, controller) {
+const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--helper-soft:#f3f7fb;--helper-text:#20364c;--helper-muted:#60758b;--helper-line:#dbe5ee;--helper-accent:#1269a4;--helper-accent-soft:#e9f3fb;--helper-good:#147d68;--helper-warning:#a76613;--helper-danger:#b64a52;--helper-header:#203b56;--el-color-primary:var(--helper-accent);--el-bg-color:var(--helper-bg);--el-bg-color-overlay:var(--helper-bg);--el-fill-color-blank:var(--helper-bg);--el-fill-color-light:var(--helper-soft);--el-fill-color:var(--helper-soft);--el-text-color-primary:var(--helper-text);--el-text-color-regular:var(--helper-text);--el-text-color-secondary:var(--helper-muted);--el-border-color:var(--helper-line);--el-border-color-light:var(--helper-line);--el-border-color-lighter:var(--helper-line);--el-table-tr-bg-color:var(--helper-bg);--el-font-size-base:var(--helper-font-size);--el-font-size-small:var(--helper-font-size);max-width:calc(100vw - 22px);font-size:var(--helper-font-size);color:var(--helper-text);color-scheme:light}\r\n.main-page[data-helper-ui][data-helper-theme=\"dark\"]{--helper-bg:#182b3d;--helper-soft:#21384d;--helper-text:#e4edf5;--helper-muted:#a2b7ca;--helper-line:#355168;--helper-accent:#8ccaff;--helper-accent-soft:#24445e;--helper-good:#7ad7bd;--helper-warning:#f2c17d;--helper-danger:#ffa6b1;--helper-header:#122234;color-scheme:dark}\r\n.main-page[data-helper-ui] .el-card{box-sizing:border-box;transition:box-shadow .15s ease;display:flex;flex-direction:column;width:var(--helper-panel-width);max-width:calc(100vw - 22px);max-height:calc(100vh - 22px);max-height:calc(100dvh - 22px);border:1px solid var(--helper-line);border-radius:16px;background:var(--helper-bg);box-shadow:0 14px 45px #132e4930,0 2px 8px #132e4912;opacity:var(--helper-opacity);overflow:hidden}\r\n.main-page[data-helper-ui] .el-card__header{flex:none;padding:13px 16px;background:var(--helper-header);color:#fff;border:0}\r\n.main-page[data-helper-ui] .card-header{gap:16px;min-height:22px}\r\n.main-page[data-helper-ui] .card-header .title{justify-content:flex-start;gap:8px;flex-wrap:wrap;font-weight:650;font-size:calc(var(--helper-font-size) + 1px);letter-spacing:.3px}\r\n.main-page[data-helper-ui] .helper-version{font-family:Consolas,monospace!important;font-size:10px;font-weight:400;color:#b4ccdf;letter-spacing:0}\r\n.main-page[data-helper-ui] .warning-icon{display:none}\r\n.main-page[data-helper-ui] .zoom-icon{border-radius:5px;padding:4px;box-sizing:content-box}\r\n.main-page[data-helper-ui] .zoom-icon:hover{background:#ffffff20}\r\n.main-page[data-helper-ui] .el-card__body{min-height:0;max-height:calc(100vh - 80px);max-height:calc(100dvh - 80px);padding:0 var(--helper-space) var(--helper-space);overflow:auto;overscroll-behavior:contain;box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--helper-line) transparent}\r\n.main-page[data-helper-ui] .card_content{width:100%!important;max-width:100%;min-width:0}\r\n.main-page[data-helper-ui] .question_table{width:100%;max-width:100%}\r\n.main-page[data-helper-ui] .helper-toolbar{font-size:var(--helper-font-size);line-height:1.55;padding:var(--helper-space) 0 10px;max-width:100%;box-sizing:border-box;border-bottom:1px solid var(--helper-line)}\r\n.main-page[data-helper-ui] .helper-status-card{padding:11px 12px;border:1px solid var(--helper-line);border-left:3px solid var(--helper-good);border-radius:10px;background:var(--helper-soft)}\r\n.main-page[data-helper-ui] .helper-status{display:flex;align-items:center;gap:7px;font-size:calc(var(--helper-font-size) + 1px);font-weight:650;color:var(--helper-text)}\r\n.main-page[data-helper-ui] .helper-status:before{content:\"\";width:7px;height:7px;border-radius:50%;background:var(--helper-good);flex:none}\r\n.main-page[data-helper-ui] .helper-toolbar[data-state=\"busy\"] .helper-status-card{border-left-color:var(--helper-accent)}\r\n.main-page[data-helper-ui] .helper-toolbar[data-state=\"busy\"] .helper-status:before{background:var(--helper-accent)}\r\n.main-page[data-helper-ui] .helper-toolbar[data-state=\"warning\"] .helper-status-card{border-left-color:var(--helper-warning)}\r\n.main-page[data-helper-ui] .helper-toolbar[data-state=\"warning\"] .helper-status:before{background:var(--helper-warning)}\r\n.main-page[data-helper-ui] .helper-toolbar[data-state=\"paused\"] .helper-status-card{border-left-color:var(--helper-muted)}\r\n.main-page[data-helper-ui] .helper-toolbar[data-state=\"paused\"] .helper-status:before{background:var(--helper-muted)}\r\n.main-page[data-helper-ui] .helper-detail{margin:5px 0 0;color:var(--helper-muted);font-size:var(--helper-font-size);overflow-wrap:anywhere;white-space:normal}\r\n.main-page[data-helper-ui] .helper-speed{font-size:calc(var(--helper-font-size) - 1px)}\r\n.main-page[data-helper-ui] .helper-speed-choice{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0;color:var(--helper-text)}\r\n.main-page[data-helper-ui] .helper-speed-choice select{max-width:65%;min-height:32px;font:inherit;color:var(--helper-accent);border:1px solid var(--helper-line);border-radius:7px;padding:4px 7px;background:var(--helper-bg)}\r\n.main-page[data-helper-ui] .helper-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}\r\n.main-page[data-helper-ui] .helper-actions button{min-width:0;min-height:34px;line-height:1.4;font:inherit;font-size:calc(var(--helper-font-size) - 1px);border:1px solid var(--helper-line);border-radius:8px;background:var(--helper-bg);color:var(--helper-text);padding:6px 4px;cursor:pointer;overflow-wrap:anywhere}\r\n.main-page[data-helper-ui] .helper-actions button:first-child{background:var(--helper-accent-soft);color:var(--helper-accent);border-color:var(--helper-accent)}\r\n.main-page[data-helper-ui] .helper-actions button:hover:not(:disabled){background:var(--helper-soft)}\r\n.main-page[data-helper-ui] .helper-actions button:disabled{opacity:.48;cursor:default}\r\n.main-page[data-helper-ui] .helper-preferences{margin-top:10px;border:1px solid var(--helper-line);border-radius:10px;background:var(--helper-bg);overflow:hidden}\r\n.main-page[data-helper-ui] .helper-preferences summary{padding:9px 11px;color:var(--helper-accent);cursor:pointer;font-weight:600;min-height:22px}\r\n.main-page[data-helper-ui] .helper-preferences[open] summary{border-bottom:1px solid var(--helper-line);background:var(--helper-soft)}\r\n.main-page[data-helper-ui] .helper-preference-list{display:grid;padding:0 11px}\r\n.main-page[data-helper-ui] .helper-preference{display:grid;grid-template-columns:minmax(0,1fr) 112px;align-items:center;gap:5px 12px;padding:10px 0;border-bottom:1px solid var(--helper-line);font-size:var(--helper-font-size)}\r\n.main-page[data-helper-ui] .helper-preference:last-child{border:0}\r\n.main-page[data-helper-ui] .helper-preference input,.main-page[data-helper-ui] .helper-preference select{box-sizing:border-box;width:100%;min-width:0;min-height:32px;border:1px solid var(--helper-line);border-radius:6px;padding:4px 7px;font:inherit;color:var(--helper-text);background:var(--helper-bg)}\r\n.main-page[data-helper-ui] .helper-preference small{grid-column:1/-1;color:var(--helper-muted);font-size:calc(var(--helper-font-size) - 1px);line-height:1.6;overflow-wrap:anywhere}\r\n.main-page[data-helper-ui] :is(button,select,input,summary,.zoom-icon):focus-visible{outline:2px solid var(--helper-accent);outline-offset:2px}\r\n.main-page[data-helper-ui] .helper-submission{font-size:calc(var(--helper-font-size) - 1px);color:var(--helper-muted);margin-top:3px}\r\n.main-page[data-helper-ui] .el-tabs__header{margin-bottom:10px}\r\n.main-page[data-helper-ui] .el-tabs__nav-wrap:after{background:var(--helper-line)}\r\n.main-page[data-helper-ui] .el-tabs__item.is-top{padding:0 10px;font-size:var(--helper-font-size);height:40px;color:var(--helper-muted)}\r\n.main-page[data-helper-ui] .el-tabs__item.is-active{font-weight:650;color:var(--helper-accent)}\r\n.main-page[data-helper-ui] .el-tabs__active-bar{background:var(--helper-accent);height:3px;border-radius:2px}\r\n.main-page[data-helper-ui] .setting-checkbox{display:flex;height:auto;margin:0 0 8px}\r\n.main-page[data-helper-ui] .el-checkbox__label{font-size:var(--helper-font-size);white-space:normal;line-height:1.6}\r\n.main-page[data-helper-ui] .setting .el-form-item{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}\r\n.main-page[data-helper-ui] .el-form-item__label{font-size:var(--helper-font-size);height:auto;line-height:1.8;color:var(--helper-text)}\r\n.main-page[data-helper-ui] :is(.announcement-board,.guide-header,.guide-card,.guide-flow){background:var(--helper-soft);border-color:var(--helper-line);color:var(--helper-text)}\r\n.main-page[data-helper-ui] :is(.announcement-heading,.guide-title,.guide-card-title,.guide-flow-step,.guide-heading-row){color:var(--helper-text)}\r\n.main-page[data-helper-ui] :is(.announcement-item,.guide-page,.guide-subtitle,.guide-copy,.answer-legend){color:var(--helper-muted);font-size:var(--helper-font-size)}\r\n.main-page[data-helper-ui] :is(.guide-number,.guide-flow-number,.guide-tag){color:var(--helper-accent);background:var(--helper-accent-soft);border-color:var(--helper-line)}\r\n.main-page[data-helper-ui] .answer-result--success{color:var(--helper-good)}\r\n.main-page[data-helper-ui] .answer-result--error{color:var(--helper-danger)}\r\n.main-page[data-helper-ui] .answer-result--searching{color:var(--helper-warning)}\r\n.main-page[data-helper-ui] .answer-result--pending{color:var(--helper-muted)}\r\n.main-page[data-helper-ui] .log :is(.el-text,.log-time){font-size:var(--helper-font-size)}\r\n.main-page[data-helper-ui] .log .el-text--success{color:var(--helper-good)}\r\n.main-page[data-helper-ui] .log .el-text--warning{color:var(--helper-warning)}\r\n.main-page[data-helper-ui] .log .el-text--danger{color:var(--helper-danger)}\r\n.main-page[data-helper-ui] :is(.model-settings-title,.model-settings-field>span,.model-settings-toggle){color:var(--helper-text);font-size:var(--helper-font-size)}\r\n.main-page[data-helper-ui] .model-settings{border-color:var(--helper-line)}\r\n.main-page[data-helper-ui] .model-settings-status{color:var(--helper-muted)}\r\n.main-page[data-helper-ui] .model-settings-status.is-error{color:var(--helper-danger)}\r\n.main-page[data-helper-ui] .model-settings-status.is-success{color:var(--helper-good)}\r\n.main-page[data-helper-ui] .log-action-link{color:var(--helper-accent)}\r\n.main-page[data-helper-ui][data-helper-minimized=\"true\"] .el-card{width:260px}\r\n.main-page[data-helper-ui][data-helper-minimized=\"true\"] .el-card__body{padding-top:0;padding-bottom:8px}\r\n.main-page[data-helper-ui][data-helper-density=\"compact\"] .el-card__header{padding:9px 12px}\r\n.main-page[data-helper-ui][data-helper-density=\"compact\"] .helper-status-card{padding:8px 10px}\r\n.main-page[data-helper-ui][data-helper-density=\"compact\"] .helper-preference{padding:7px 0}\r\n.main-page[data-helper-ui][data-helper-density=\"compact\"] .el-tabs__item{height:34px}\r\n@media(max-width:420px){.main-page[data-helper-ui] .helper-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.main-page[data-helper-ui] .helper-actions button:first-child{grid-column:1/-1}.main-page[data-helper-ui] .helper-preference{grid-template-columns:minmax(0,1fr) 102px}.main-page[data-helper-ui] .el-card__header{padding:10px 12px}.main-page[data-helper-ui] .el-tabs__item.is-top{padding:0 8px}}\r\n\r\n.main-page[data-helper-ui] [hidden]{display:none!important}\r\n.main-page[data-helper-ui] .helper-recovery{margin-top:9px;min-height:30px;padding:5px 10px;border:1px solid var(--helper-accent);border-radius:7px;background:var(--helper-accent-soft);color:var(--helper-accent);font:inherit;cursor:pointer}\r\n.main-page[data-helper-ui] .helper-message{margin-top:8px;color:var(--helper-muted);font-size:12px;overflow-wrap:anywhere}\r\n.main-page[data-helper-ui] .helper-message:empty{display:none}\r\n.main-page[data-helper-ui] .helper-settings-tools{padding:10px;grid-template-columns:repeat(3,minmax(0,1fr))}\r\n.main-page[data-helper-ui] .helper-import-preview{padding:10px;border-top:1px solid var(--helper-line)}\r\n.main-page[data-helper-ui] .helper-import-preview pre{max-height:150px;overflow:auto;white-space:pre-wrap;font:inherit}\r\n.main-page[data-helper-ui] .helper-import-preview button,.main-page[data-helper-ui] .helper-history-pages button{font:inherit;border:1px solid var(--helper-line);border-radius:6px;padding:5px 8px;background:var(--helper-soft);color:var(--helper-text);cursor:pointer}\r\n.main-page[data-helper-ui] .helper-diagnostic{box-sizing:border-box;display:block;margin:8px;width:calc(100% - 16px);height:120px;color:var(--helper-text);background:var(--helper-soft);border:1px solid var(--helper-line);border-radius:6px}\r\n.main-page[data-helper-ui] .helper-mini{display:flex;align-items:center;gap:7px;padding-top:10px;font-size:12px;min-width:0}\r\n.main-page[data-helper-ui] .helper-mini-status{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--helper-good)}\r\n.main-page[data-helper-ui] .helper-mini[data-state=\"warning\"] .helper-mini-status{color:var(--helper-warning)}\r\n.main-page[data-helper-ui] .helper-mini[data-state=\"paused\"] .helper-mini-status{color:var(--helper-muted)}\r\n.main-page[data-helper-ui] .helper-mini-speed{font-family:Consolas,monospace;white-space:nowrap;color:var(--helper-muted)}\r\n.main-page[data-helper-ui] .helper-mini button{font:inherit;border:1px solid var(--helper-line);border-radius:6px;background:var(--helper-accent-soft);color:var(--helper-accent);padding:4px 7px;white-space:nowrap;cursor:pointer}\r\n.main-page[data-helper-ui] .helper-history-pages{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 0;font-size:12px}\r\n.main-page[data-helper-ui] .helper-history-pages button:disabled{opacity:.4;cursor:default}\r\n\r\n.main-page[data-helper-ui] .helper-fallback{margin:8px 10px;border:1px solid var(--helper-line);border-radius:7px}\r\n.main-page[data-helper-ui] .helper-fallback>small{display:block;margin:8px;color:var(--helper-muted);font-size:12px;line-height:1.6}\r\n.main-page[data-helper-ui] .helper-fallback-field{display:grid;grid-template-columns:1fr;gap:5px;padding:7px 10px;color:var(--helper-text);font-size:12px}\r\n.main-page[data-helper-ui] .helper-fallback-field input,.main-page[data-helper-ui] .helper-fallback-field select{box-sizing:border-box;width:100%;min-height:30px;padding:4px 6px;border:1px solid var(--helper-line);border-radius:5px;background:var(--helper-bg);color:var(--helper-text);font:inherit}\r\n.main-page[data-helper-ui] .helper-fallback-field input[type=\"checkbox\"]{width:18px;min-height:18px;accent-color:var(--helper-accent)}\r\n@media(prefers-reduced-motion:reduce){.main-page[data-helper-ui] *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}\r\n";
+  function mountJcedutecPanel(panel, config, controller, tools = {}) {
     const body = panel.querySelector(".el-card__body");
     const root = panel.getRootNode();
     const style = document.createElement("style");
@@ -8079,12 +8430,12 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     speedLabel.append(speedSelect);
     const actions = document.createElement("div");
     actions.className = "helper-actions";
-    const makeButton = (caption, action) => {
+    const makeButton = (caption, action, container = actions) => {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = caption;
       button.addEventListener("click", action);
-      actions.append(button);
+      container.append(button);
       return button;
     };
     const toggle = makeButton("暂停", () => {
@@ -8093,6 +8444,36 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     });
     const retry = makeButton("重试当前题", () => { if (controller.retryCurrent()) void controller.tick(); });
     const clear = makeButton("清空缓存", () => controller.clearCache());
+    const recovery = makeButton("检查模型配置", () => {
+      const state = controller.getStatus();
+      if (state.standby) return tools.takeover?.();
+      if (/播放/.test(recovery.textContent)) {
+        const video = document.querySelector("video");
+        if (!video || state.paused) return;
+        try { Promise.resolve(video.play()).then(() => controller.tick(), () => { message.textContent = "播放仍被阻止，请使用网站播放器的播放按钮"; }); } catch { message.textContent = "请使用网站播放器的播放按钮"; }
+      } else {
+        config.menuIndex = "1"; config.isMinus = false;
+        requestAnimationFrame(() => panel.querySelector(".model-settings")?.scrollIntoView({block: "nearest"}));
+      }
+    }, statusCard);
+    recovery.className = "helper-recovery";
+    const message = document.createElement("div");
+    message.className = "helper-message";
+    message.setAttribute("aria-live", "polite");
+    const mini = document.createElement("div");
+    mini.className = "helper-mini";
+    mini.setAttribute("aria-label", "迷你控制条");
+    const miniStatus = document.createElement("span");
+    miniStatus.className = "helper-mini-status";
+    const miniSpeed = document.createElement("span");
+    miniSpeed.className = "helper-mini-speed";
+    const miniToggle = makeButton("暂停", () => {
+      if (controller.getStatus().standby) tools.takeover?.();
+      else { if (controller.getStatus().paused) controller.resume(); else controller.pause(); void controller.tick(); }
+    }, mini);
+    const miniRestore = makeButton("展开", () => { config.isMinus = false; }, mini);
+    miniRestore.setAttribute("aria-label", "展开助手窗口");
+    mini.prepend(miniStatus, miniSpeed);
     const preferences = document.createElement("details");
     preferences.className = "helper-preferences";
     const summary = document.createElement("summary");
@@ -8129,12 +8510,111 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       row.append(caption, input, help); preferenceList.append(row);
       controls.set(field.key, input);
     }
-    preferences.append(summary, preferenceList);
-    toolbar.append(statusCard, speedLabel, actions, preferences);
+    const fallbackSection = document.createElement("details");
+    fallbackSection.className = "helper-fallback";
+    const fallbackHeading = document.createElement("summary");
+    fallbackHeading.textContent = "答案等待与备用接口";
+    const fallbackHelp = document.createElement("small");
+    fallbackHelp.textContent = "默认等待 15 秒，超时取消旧请求，第二次使用备用接口。留空则尝试已保存的其他服务商；没有可用备用时，原接口仅重试一次。";
+    const fallbackFields = [
+      ["enabled", "超时后重试一次", "checkbox"],
+      ["waitSeconds", "等待答案上限（秒）", "number"],
+      ["protocol", "备用接口协议", "select"],
+      ["url", "备用接口地址", "url"],
+      ["model", "备用模型名称", "text"],
+      ["token", "备用 API Key", "password"]
+    ];
+    const fallbackControls = new Map();
+    for (const [key, caption, type] of fallbackFields) {
+      const row = document.createElement("label"); row.className = "helper-fallback-field";
+      const text = document.createElement("span"); text.textContent = caption;
+      const input = document.createElement(type === "select" ? "select" : "input");
+      input.setAttribute("aria-label", caption); input.dataset.fallback = key;
+      if (type === "select") for (const [value, title] of [["chat","OpenAI Chat"],["responses","OpenAI Responses"],["anthropic","Anthropic"],["gemini","Gemini"]]) {
+        const option = document.createElement("option"); option.value = value; option.textContent = title; input.append(option);
+      } else {
+        input.type = type;
+        if (type === "number") { input.min = "5"; input.max = "120"; input.step = "1"; }
+        if (key === "token") { input.autocomplete = "off"; input.spellcheck = false; }
+        if (key === "url") input.placeholder = "https://your-provider.example/v1";
+      }
+      input.addEventListener("change", () => {
+        const saved = config.helperFallbackModel;
+        if (key === "enabled") saved.enabled = input.checked;
+        else if (key === "waitSeconds") {
+          const value = Number(input.value);
+          saved.waitSeconds = Number.isFinite(value) ? Math.max(5, Math.min(120, value)) : 15;
+          input.value = saved.waitSeconds;
+        } else if (key === "url" && input.value.trim()) {
+          try {
+            const address = new URL(input.value.trim());
+            if (!["http:", "https:"].includes(address.protocol) || address.username || address.password || address.search || address.hash) throw new Error();
+            saved.url = input.value.trim();
+          } catch { message.textContent = "备用接口请填写不含凭据或查询参数的 HTTP(S) 地址，Key 填入独立输入框"; input.value = saved.url; }
+        } else saved[key] = input.value.trim();
+      });
+      row.append(text, input); fallbackSection.append(row); fallbackControls.set(key, input);
+    }
+    fallbackSection.prepend(fallbackHeading, fallbackHelp);
+    const settingsTools = document.createElement("div");
+    settingsTools.className = "helper-settings-tools helper-actions";
+    const importInput = document.createElement("input");
+    importInput.type = "file"; importInput.accept = ".json,application/json"; importInput.hidden = true;
+    const importPreview = document.createElement("div");
+    importPreview.className = "helper-import-preview"; importPreview.hidden = true;
+    const previewText = document.createElement("pre");
+    let pendingImport = null;
+    makeButton("导出设置", () => {
+      try {
+        const content = JSON.stringify(createHelperSettingsBackup(config), null, 2);
+        const address = URL.createObjectURL(new Blob([content], {type: "application/json"}));
+        const anchor = document.createElement("a");
+        anchor.href = address; anchor.download = "course-helper-settings.json"; anchor.click();
+        setTimeout(() => URL.revokeObjectURL(address), 1000);
+        message.textContent = "已导出设置，不含 API Key、搜索密钥和登录信息";
+      } catch (error) { message.textContent = error.message; }
+    }, settingsTools);
+    makeButton("导入设置", () => importInput.click(), settingsTools);
+    makeButton("复制诊断", async () => {
+      const content = tools.diagnostic?.();
+      if (!content) return;
+      diagnosticText.value = content; diagnosticText.hidden = false; diagnosticText.select();
+      try {
+        if (document.execCommand("copy")) { diagnosticText.hidden = true; message.textContent = "已复制最近 20 条脱敏诊断，请在发送前检查内容"; }
+        else message.textContent = "诊断已生成，请在下方文本框按 Ctrl+C 复制";
+      } catch { message.textContent = "诊断已生成，请在下方文本框按 Ctrl+C 复制"; }
+    }, settingsTools);
+    const diagnosticText = document.createElement("textarea");
+    diagnosticText.className = "helper-diagnostic"; diagnosticText.readOnly = true; diagnosticText.hidden = true;
+    diagnosticText.setAttribute("aria-label", "脱敏诊断内容");
+    const applyImport = makeButton("确认导入并暂停", () => {
+      if (!pendingImport) return;
+      controller.pause(); pendingImport.apply(); controller.pause();
+      pendingImport = null; importPreview.hidden = true;
+      message.textContent = "设置已导入，助手保持暂停；核对模型配置后点击恢复";
+    }, importPreview);
+    makeButton("取消", () => { pendingImport = null; importPreview.hidden = true; }, importPreview);
+    importPreview.prepend(previewText);
+    importInput.addEventListener("change", async () => {
+      const file = importInput.files?.[0];
+      importInput.value = "";
+      pendingImport = null; importPreview.hidden = true;
+      if (!file) return;
+      try {
+        if (file.size > 65536) throw new Error("设置文件不能超过 64 KB");
+        pendingImport = prepareHelperSettingsImport(await file.text(), config);
+        previewText.textContent = pendingImport.changes.length ? "将修改以下设置：\n" + pendingImport.changes.join("\n") + "\n导入后助手保持暂停，密钥不从文件导入。" : "配置相同，无需导入。";
+        applyImport.disabled = pendingImport.changes.length === 0;
+        importPreview.hidden = false;
+      } catch (error) { message.textContent = error.message; }
+    });
+    preferences.append(summary, preferenceList, fallbackSection, settingsTools, importInput, importPreview, diagnosticText);
+    toolbar.append(statusCard, speedLabel, actions, preferences, message);
     body.insertBefore(toolbar, body.firstChild);
+    body.insertBefore(mini, toolbar);
     const version = document.createElement("span");
     version.className = "helper-version";
-    version.textContent = "0.2.9.7";
+    version.textContent = "0.2.9.8 · Waffing";
     panel.querySelector(".title")?.append(version);
     const zoomIcons = Array.from(panel.querySelectorAll(".zoom-icon"));
     const onZoomKey = (event) => {
@@ -8153,6 +8633,13 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       label.textContent = state.label;
       detail.textContent = state.detail;
       toolbar.dataset.state = state.paused ? "paused" : /人工|冷却|缓冲/.test(state.label) ? "warning" : /查询|等待/.test(state.label) ? "busy" : "active";
+      miniStatus.textContent = state.label;
+      miniStatus.title = state.detail;
+      miniSpeed.textContent = state.speedText?.match(/[\d.]+\s*×/)?.[0] || (state.selectedSpeed ? state.selectedSpeed + "×" : "自动倍速");
+      mini.dataset.state = toolbar.dataset.state;
+      miniToggle.textContent = state.standby ? "接管" : state.paused ? "恢复" : "暂停";
+      recovery.hidden = !(state.standby || !state.paused && /人工|冷却/.test(state.label) && /模型|接口|HTTP.?40[13]|权限|配置|手动.*播放|播放.*阻止/.test(state.detail));
+      recovery.textContent = state.standby ? "在此页接管" : /播放/.test(state.detail) ? "点此播放" : "检查模型配置";
       speed.textContent = state.speedText || "";
       speed.hidden = !state.speedText;
       const rates = state.speedRates?.length ? state.speedRates : [1, 1.5, 2];
@@ -8167,6 +8654,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       }
       speedSelect.disabled = !state.speedEnabled || state.paused;
       speedSelect.value = String(selected);
+      toggle.disabled = state.standby === true;
       toggle.textContent = state.paused ? "恢复" : "暂停";
       toggle.setAttribute("aria-label", state.paused ? "恢复助手" : "暂停助手和视频");
       retry.disabled = !state.canRetry || state.paused;
@@ -8192,15 +8680,21 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       panel.dataset.helperTheme = values.theme === "system" ? media.matches ? "dark" : "light" : values.theme;
       panel.dataset.helperDensity = values.density;
       panel.dataset.helperMinimized = String(config.isMinus === true);
+      version.textContent = config.isMinus === true ? "Waffing" : "0.2.9.8 · Waffing";
       panel.style.setProperty("--helper-font-size", values.fontSize + "px");
       panel.style.setProperty("--helper-panel-width", (config.menuIndex === "1" ? Math.min(900, values.panelWidth * 1.8) : values.panelWidth) + "px");
       panel.style.setProperty("--helper-opacity", String(values.opacity / 100));
       panel.style.setProperty("--helper-space", values.density === "compact" ? "10px" : "16px");
       toolbar.hidden = config.isMinus === true;
+      mini.hidden = config.isMinus !== true;
       for (const [key, input] of controls) if (root.activeElement !== input) input.value = String(values[key]);
+      for (const [key, input] of fallbackControls) if (root.activeElement !== input) {
+        if (key === "enabled") input.checked = config.helperFallbackModel.enabled;
+        else input.value = String(config.helperFallbackModel[key] ?? "");
+      }
       schedule();
     }
-    const stopPreferences = vue.watch(() => [getHelperPreferences(config.helperPreferences), config.menuIndex, config.isMinus], applyPreferences, {deep: true, immediate: true});
+    const stopPreferences = vue.watch(() => [getHelperPreferences(config.helperPreferences), config.helperFallbackModel, config.menuIndex, config.isMinus], applyPreferences, {deep: true, immediate: true});
     media.addEventListener("change", applyPreferences);
     const resize = new ResizeObserver(schedule);
     resize.observe(panel);
@@ -8217,7 +8711,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       window.removeEventListener("resize", schedule);
       window.visualViewport?.removeEventListener("resize", schedule);
       document.removeEventListener("mouseup", schedule);
-      toolbar.remove(); version.remove(); style.remove(); delete panel.dataset.helperUi;
+      toolbar.remove(); mini.remove(); version.remove(); style.remove(); delete panel.dataset.helperUi;
     } };
   }
 
@@ -8284,7 +8778,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     };
     let panelUI = null;
     let timer = null;
-    let wakeTimer = null;
+    let wakeToken = null;
     let disposed = false;
     let suspended = false;
     let running = false;
@@ -8292,25 +8786,39 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     function schedule() {
       if (disposed || suspended) return;
       dirty = true;
-      if (wakeTimer !== null) return;
-      wakeTimer = setTimeout(async () => {
-        wakeTimer = null;
+      if (wakeToken !== null) return;
+      const token = wakeToken = {};
+      queueMicrotask(async () => {
+        if (wakeToken !== token) return;
+        wakeToken = null;
         if (disposed || suspended) return;
         if (running) { void controller.tick(); return; }
         dirty = false;
         running = true;
         try { await controller.tick(); }
         finally { running = false; if (dirty) schedule(); }
-      }, 0);
+      });
     }
     const instance = vue.getCurrentInstance();
     const preferences = () => getHelperPreferences(config.helperPreferences);
+    let coordinator;
+    coordinator = helperTabCoordinator = createHelperCoordinator(_unsafeWindow, () => {
+      if (coordinator && !coordinator.isOwner()) void controller.tick();
+      schedule();
+    });
+    const pacer = getSharedHelperPacer();
+    helperNetworkStatus = (seconds, cooling) => {
+      if (coordinator.isOwner()) panelUI?.update({...controller.getStatus(), label: cooling ? "请求冷却" : "等待请求", detail: `请求队列等待，${seconds} 秒后可继续`});
+    };
     const speedRate = config.platformParams.jcedutec.parts[0].params.find((param) => param.name === "视频倍速档位（0为自动）");
     const controller = createJcedutecController(_unsafeWindow, {
+      canRun: () => coordinator.isOwner(),
+      requestPacer: pacer,
+      sharedReceipts: {get: (key) => coordinator.getReceipt(md5(key)), reserve: (key) => coordinator.reserve(md5(key)), record: (key, result) => coordinator.record(md5(key), result)},
       settings: () => Object.fromEntries(Object.entries(labels).map(([key, label]) => [key,
         config.platformParams.jcedutec.parts[0].params.find((param) => param.name === label)?.value === true
       ])),
-      modelIdentity: () => JSON.stringify([config.queryApis[0], config.modelSearch]),
+      modelIdentity: () => JSON.stringify([config.queryApis[0], config.modelSearch, config.helperFallbackModel]),
       setEnabled: (value) => { config.platformParams.jcedutec.parts[0].params.find((param) => param.name === labels.enabled).value = value; },
       onStatus: (state) => panelUI?.update(state),
       onSpeedStatus: () => panelUI?.update(controller.getStatus()),
@@ -8319,7 +8827,11 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       saveSpeed: (rate) => { if (speedRate) speedRate.value = rate; },
       delay: () => preferences().actionDelay * 1000,
       requestInterval: () => preferences().requestInterval * 1000,
-      resolve: getAnswer,
+      resolve: (question, context) => queryHelperAnswer(question, context, {
+        primary: cloneLatestValue(config.queryApis[0]), fallback: getHelperFallback(config),
+        waitSeconds: config.helperFallbackModel.waitSeconds, enabled: config.helperFallbackModel.enabled,
+        resolve: getAnswer, log: (message, type) => logs.addLog(message, type)
+      }),
       loadImages: loadJcedutecImages,
       addQuestion: (parsed) => {
         const question = vue.reactive(parsed);
@@ -8337,44 +8849,44 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     };
     const stop = () => {
       clearInterval(timer); timer = null;
-      clearTimeout(wakeTimer); wakeTimer = null; dirty = false;
+      wakeToken = null; dirty = false;
     };
     const mediaEvents = ["loadedmetadata", "loadeddata", "canplay", "playing", "waiting", "ended", "pause", "emptied", "error", "ratechange"];
     const onMedia = (event) => { if (event.target?.tagName === "VIDEO") schedule(); };
-    const modalSelector = ".ant-modal-root, .ant-modal-wrap, .ant-modal-content, .geetest_panel, .geetest_holder, .yidun_popup, [class*='captcha']";
+    const modalSelector = ".ant-modal-root, .ant-modal-wrap, .ant-modal-content, .exam-modal, .geetest_panel, .geetest_holder, .yidun_popup, [class*='captcha']";
     const relevantSelector = "video, source, " + modalSelector;
     const observer = new MutationObserver((records) => {
-      if (records.some((record) => record.target.nodeType === 1 &&
-          (record.target.matches(relevantSelector) || record.target.closest(modalSelector)) ||
+      if (records.some((record) => (record.target.nodeType === 1 ? record.target.matches(relevantSelector) || record.target.closest(modalSelector) : record.target.parentElement?.closest(modalSelector)) ||
           Array.from(record.addedNodes).concat(Array.from(record.removedNodes)).some((node) =>
             node.nodeType === 1 && (node.matches(relevantSelector) || node.querySelector(relevantSelector))))) schedule();
     });
-    observer.observe(_unsafeWindow.document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ["src", "style", "class"]});
+    observer.observe(_unsafeWindow.document.documentElement, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["src", "style", "class", "disabled", "value", "type", "aria-hidden"]});
     for (const event of mediaEvents) _unsafeWindow.document.addEventListener(event, onMedia, true);
     _unsafeWindow.addEventListener("popstate", schedule);
-    const stopConfig = vue.watch(() => [config.platformParams.jcedutec, config.queryApis, config.modelSearch, config.helperPreferences], schedule, {deep: true});
+    const stopConfig = vue.watch(() => [config.platformParams.jcedutec, config.queryApis, config.modelSearch, config.helperFallbackModel, config.helperPreferences], schedule, {deep: true});
     const dispose = () => {
       if (disposed) return;
       disposed = true;
       stop(); observer.disconnect(); stopConfig();
       for (const event of mediaEvents) _unsafeWindow.document.removeEventListener(event, onMedia, true);
       _unsafeWindow.removeEventListener("popstate", schedule);
-      controller.dispose(); panelUI?.dispose();
+      controller.dispose(); panelUI?.dispose(); coordinator.dispose();
+      helperTabCoordinator = null; helperNetworkStatus = null;
       _unsafeWindow.removeEventListener("pagehide", onHide);
       _unsafeWindow.removeEventListener("pageshow", onShow);
       if (_unsafeWindow.__courseHelperSession291?.controller === controller) delete _unsafeWindow.__courseHelperSession291;
     };
     const onHide = (event) => {
       suspended = true; stop();
-      if (event.persisted) controller.suspend(); else dispose();
+      if (event.persisted) { coordinator.suspend(); controller.suspend(); } else dispose();
     };
-    const onShow = (event) => { if (event.persisted && !disposed) { suspended = false; controller.restore(); start(); panelUI?.clamp(); } };
+    const onShow = (event) => { if (event.persisted && !disposed) { suspended = false; coordinator.restore(); controller.restore(); start(); panelUI?.clamp(); } };
     _unsafeWindow.__courseHelperSession291 = {controller};
     _unsafeWindow.addEventListener("pagehide", onHide);
     _unsafeWindow.addEventListener("pageshow", onShow);
     vue.onMounted(() => {
       const panel = instance.proxy.$el.closest(".main-page");
-      if (panel) panelUI = mountJcedutecPanel(panel, config, controller);
+      if (panel) panelUI = mountJcedutecPanel(panel, config, controller, {takeover: () => coordinator.takeover(), diagnostic: () => createHelperDiagnostic(config, controller.getStatus(), logs.logList, _unsafeWindow.location)});
     });
     vue.onBeforeUnmount(dispose);
     start();

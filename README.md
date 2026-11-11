@@ -1,62 +1,99 @@
-# 网课小助手 · 私有维护版
+<div align="center">
 
-当前版本 **0.2.9.7**。正常课程完成收到成功回执后直接切课，新视频元数据就绪即请求播放，再处理倍速；视频习题仍在核对后立即提交。保留原脚本名称、namespace `noshuang` 和模型存储键，新增站点适配、可选视频倍速、7 项个性化设置和新版悬浮窗。
+# CoursePilot AI · 网课小助手
 
-## 下载与安装
+视频学习、模型答题与便捷控制，集中在一个可拖动的小窗口。
 
-- [完整用户脚本](course-helper.user.js)
-- [完整交付包（含说明、验证记录和 0.2.9.6 回退版）](artifacts/网课小助手-0.2.9.7.zip)
-- [0.2.9.7 更新说明](docs/更新说明-0.2.9.7.md)
-- [安装与运行指南](docs/安装与运行指南-0.2.9.7.md)
-- [运行约束与异常处理](docs/运行约束与异常处理-0.2.9.7.md)
+作者署名 **Waffing** · 基于 isMobile 及上游贡献者的原作维护
 
-这是私有仓库，需要登录有权限的 GitHub 账号后下载。更新时优先在油猴管理面板打开原脚本条目，粘贴新版完整内容并保存，以保留原条目的配置。不要依赖未登录的 Raw 链接自动更新。
+![版本](https://img.shields.io/badge/version-0.2.9.8-2563eb?style=flat-square)
+![MIT](https://img.shields.io/badge/license-MIT-10b981?style=flat-square)
+![JavaScript](https://img.shields.io/badge/JavaScript-UserScript-f2c94c?style=flat-square)
+![浏览器](https://img.shields.io/badge/browser-Edge%20%7C%20Chrome-64748b?style=flat-square)
 
-目标环境为 Windows 上的 Chrome 120+ / Edge 120+ 及 Tampermonkey。原有外部依赖和模型服务仍需联网；浏览器具体权限与安装步骤见指南。
+**[安装最新版](https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js)** · **[配图新手教程](docs/新手教程.md)** · **[更新内容](docs/更新说明-0.2.9.8.md)** · **[反馈问题](https://github.com/Waffing/CoursePilot-AI-Private/issues)**
 
-## 本版功能
+</div>
 
-支持视频页面弹题、题库练习及手动开始后的正式／模拟试卷流程；倍速优先读取播放器，读不到时提供 1×、1.5×、2×。暂停会停止助手和视频，重试受提交状态与接口冷却限制。
+## 先看效果
 
-| 个性化设置 | 全新配置默认值 | 用途 |
-| --- | --- | --- |
-| 界面主题 | 跟随系统 | 切换浅色、深色或系统主题 |
-| 布局密度 | 舒适 | 调整窗口留白 |
-| 文字大小 | 13 px | 调整窗口正文与主要控件 |
-| 面板宽度 | 360 px | 设置常规宽度，受视口约束 |
-| 不透明度 | 100% | 调整窗口透明程度 |
-| 请求间隔 | 5 秒 | 限制自动模型、搜索和图片请求 |
-| 操作等待 | 3 秒 | 用于题库／试卷；视频习题与完成回执后的切课无额外等待 |
+<table>
+<tr><td width="50%" align="center"><strong>日常控制 · 状态与倍速</strong></td><td width="50%" align="center"><strong>深色主题 · 个性化设置</strong></td></tr>
+<tr><td align="center" valign="top"><img src="docs/images/01-overview-light.png" width="390" alt="浅色主面板：状态、倍速和暂停恢复"></td><td align="center" valign="top"><img src="docs/images/03-preferences-dark.png" width="390" alt="深色面板和个性化设置"></td></tr>
+</table>
 
-![浅色悬浮窗（隔离测试页面）](docs/界面预览-浅色.png)
+最小化后仍可暂停、恢复并查看状态：
 
-新增界面及自动请求节奏仅在 `bbgu.jcedutec.cn` 启用。原超星、智慧树处理逻辑保持原样。脚本不保证模型答案正确或网站永不判异常；验证码、身份验证、签名和登录由用户处理，不伪造课程记录。
+![迷你控制条](docs/images/04-mini-toolbar.png)
+
+> 助手截图来自 0.2.9.8 的隔离演示环境，使用测试模型、测试用户和模拟网站响应；不包含真实登录信息，不代表真实账户验收。
+
+## 三步开始
+
+1. 安装 [暴力猴 Violentmonkey](https://violentmonkey.github.io/get-it/)，按浏览器选择官网提供的稳定版商店入口。
+2. 点击 **[安装完整脚本](https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js)**。若没有安装页，在暴力猴新建脚本中粘贴 [Raw 完整内容](course-helper.user.js)，`Ctrl+S` 保存。
+3. 登录课程网站并刷新，先暂停助手，在“答题”配置自己的模型接口、Key 和模型，测试连接后恢复。
+
+第一次使用请按 **[配图新手教程](docs/新手教程.md)** 操作。已有版本在原脚本条目更新，以保留密钥和设置；同一浏览器只启用一份本脚本。
+
+## 能做什么
+
+| 场景 | 使用体验 |
+| --- | --- |
+| 连续视频 | 元数据就绪即请求播放；自然完成并收到网站成功回执后切课 |
+| 视频倍速 | 优先读取原播放器档位，可手动选择；无法识别时提供 1× / 1.5× / 2× |
+| 视频弹题 | 题框和文字变化立即触发识别，填选核对后立即提交，单独展示网站是否接受 |
+| 题库练习 | 单选、多选、判断及支持图片的模型输入；练习按操作等待设置继续 |
+| 请求稳定性 | 统一请求队列；答案默认 15 秒超时，取消旧请求后尝试备用模型，最多两次 |
+| 多个标签页 | 一页运行、其他页等待，手动接管；保留最小提交记录避免重发 |
+| 长时间使用 | 日志限制 300 条，答题历史每页 100 条，减少重复页面解析 |
+| 操作便利 | 迷你控制条、主题、文字大小、设置备份、导入预览与脱敏诊断 |
+
+新增面板、协调机制与请求节奏用于 `bbgu.jcedutec.cn`；原有超星学习通、知到智慧树逻辑继续保留。新站点的试卷需用户自己选卷和开始；验证码、身份验证、签名和登录由用户处理。每日练习及其他未适配页面没有新增支持。
+
+## 常用设置
+
+| 设置 | 全新安装默认值 |
+| --- | --- |
+| 主题 / 密度 | 跟随系统 / 舒适 |
+| 字号 / 面板宽度 / 不透明度 | 13 px / 360 px / 100% |
+| 请求最小间隔 | 5 秒，含获取模型和测试连接 |
+| 练习／试卷操作等待 | 3 秒；视频弹题与确认完成后切课无额外固定等待 |
+| 视频倍速 | 自动选择可用的最高档，可自行改选 |
+
+已有安装会继承配置。文字题答案缓存仅在页面会话内保留最近 100 条，图片题不缓存。设置导出排除密钥，换管理器或浏览器需要重新填写 Key。
+
+<details>
+<summary><strong>模型设置与多标签页接管截图</strong></summary>
+
+![模型设置：示例域名不能用于真实调用](docs/images/02-model-settings.png)
+
+![第二个标签页等待与接管](docs/images/05-tab-takeover.png)
+
+</details>
+
+## 文档与下载
+
+- [从安装暴力猴到日常使用](docs/新手教程.md)：安装、模型配置、操作按钮、迁移和常见问题。
+- [0.2.9.8 更新说明](docs/更新说明-0.2.9.8.md)、[验证报告](docs/验证报告-0.2.9.8.md)、[运行约束](docs/运行约束与异常处理-0.2.9.8.md)。
+- [完整交付包](artifacts/网课小助手-0.2.9.8.zip)、[0.2.9.7 回退脚本](rollback/0.2.9.7/course-helper.user.js)、[文件校验和](SHA256SUMS.txt)。
+
+网络、模型服务、网站规则和浏览器策略仍影响运行效果，模型答案不保证正确。隔离测试与真实账户、真实管理器中的验收结果分别记录。
 
 ## 源码与构建
 
-`src/` 包含保留的原脚本、适配模块和构建器。Node.js 20+ 可直接构建，无需安装 npm 包：
+Node.js 20+，构建不需要安装 npm 依赖：
 
 ```sh
 node src/build-adaptation.cjs
 node --check course-helper.user.js
+node --test tests/core.test.cjs
 ```
 
-构建器只替换原脚本的指定位置，并输出根目录的 `course-helper.user.js`。仓库源码没有包含真实模型 Key、浏览器会话、个人配置或完整站点抓取 fixture。
+`src/` 保留基础脚本、适配模块和构建器。`tests/` 提供可独立重跑的设置、脱敏和协调核心测试；完整本地浏览器回归依赖未公开的站点捕获 fixture，结果见验证报告。
 
-## 验证与回退
+请勿在 Issues 上传 API Key、完整浏览器配置或登录数据。可以使用“复制诊断”，检查内容后附上版本和复现步骤。
 
-本地 **127 项检查通过，0 失败、0 跳过**，包含原有 113 项检查和本次新增 14 项；实测使用隔离 Edge 157.0.4341.42 和模拟的模型／后台响应。[验证报告](docs/验证报告-0.2.9.7.md)、[原始检查记录](verification/检查记录-0.2.9.7.txt)、[结构化记录](verification/verification-0.2.9.7.json) 已保留。
+## 授权与致谢
 
-新增检查关闭每秒兜底回调，验证事件驱动切课与两个真实解码视频启动。播放请求不会阻塞助手，迟到的旧来源错误不干扰新来源，重复事件合并处理；相同状态不重复重写浮窗。网络缓冲、解码和浏览器自动播放限制仍会影响实际速度。
-
-这些是本地验收记录。完整浏览器测试用到的站点捕获 fixture 和已登录浏览器环境未上传，不能仅凭本仓库文件重跑全部实站相关组件检查。
-
-当前电脑上的油猴安装与真实账户流程尚未确认，见[安装状态](docs/安装状态-0.2.9.5.md)。记录中的 localhost 安装链接只适用于原电脑的服务会话，从 GitHub 安装请使用上面的下载与编辑器更新步骤。
-
-- [0.2.9.6 回退脚本](rollback/0.2.9.6/course-helper.user.js)
-- [0.2.9.5 回退脚本](rollback/0.2.9.5/course-helper.user.js)
-- [0.2.9.4 回退脚本](rollback/0.2.9.4/course-helper.user.js)
-- [0.2.9.0 回退脚本](rollback/0.2.9.0/coursepilot-ai.jcedutec.user.js)
-- [当前仓库文件校验和](SHA256SUMS.txt)
-
-原始脚本及本次改动保留 MIT 授权和原作者署名，见 [LICENSE](LICENSE)。
+保留原作者 **isMobile** 及上游贡献者署名，沿用 [MIT License](LICENSE)。暴力猴由 [Violentmonkey](https://github.com/violentmonkey/violentmonkey) 项目维护，模型服务由使用者自行配置。

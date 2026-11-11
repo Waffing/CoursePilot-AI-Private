@@ -61,7 +61,7 @@
     };
     let panelUI = null;
     let timer = null;
-    let wakeTimer = null;
+    let wakeToken = null;
     let disposed = false;
     let suspended = false;
     let running = false;
@@ -69,25 +69,39 @@
     function schedule() {
       if (disposed || suspended) return;
       dirty = true;
-      if (wakeTimer !== null) return;
-      wakeTimer = setTimeout(async () => {
-        wakeTimer = null;
+      if (wakeToken !== null) return;
+      const token = wakeToken = {};
+      queueMicrotask(async () => {
+        if (wakeToken !== token) return;
+        wakeToken = null;
         if (disposed || suspended) return;
         if (running) { void controller.tick(); return; }
         dirty = false;
         running = true;
         try { await controller.tick(); }
         finally { running = false; if (dirty) schedule(); }
-      }, 0);
+      });
     }
     const instance = vue.getCurrentInstance();
     const preferences = () => getHelperPreferences(config.helperPreferences);
+    let coordinator;
+    coordinator = helperTabCoordinator = createHelperCoordinator(_unsafeWindow, () => {
+      if (coordinator && !coordinator.isOwner()) void controller.tick();
+      schedule();
+    });
+    const pacer = getSharedHelperPacer();
+    helperNetworkStatus = (seconds, cooling) => {
+      if (coordinator.isOwner()) panelUI?.update({...controller.getStatus(), label: cooling ? "请求冷却" : "等待请求", detail: `请求队列等待，${seconds} 秒后可继续`});
+    };
     const speedRate = config.platformParams.jcedutec.parts[0].params.find((param) => param.name === "视频倍速档位（0为自动）");
     const controller = createJcedutecController(_unsafeWindow, {
+      canRun: () => coordinator.isOwner(),
+      requestPacer: pacer,
+      sharedReceipts: {get: (key) => coordinator.getReceipt(md5(key)), reserve: (key) => coordinator.reserve(md5(key)), record: (key, result) => coordinator.record(md5(key), result)},
       settings: () => Object.fromEntries(Object.entries(labels).map(([key, label]) => [key,
         config.platformParams.jcedutec.parts[0].params.find((param) => param.name === label)?.value === true
       ])),
-      modelIdentity: () => JSON.stringify([config.queryApis[0], config.modelSearch]),
+      modelIdentity: () => JSON.stringify([config.queryApis[0], config.modelSearch, config.helperFallbackModel]),
       setEnabled: (value) => { config.platformParams.jcedutec.parts[0].params.find((param) => param.name === labels.enabled).value = value; },
       onStatus: (state) => panelUI?.update(state),
       onSpeedStatus: () => panelUI?.update(controller.getStatus()),
@@ -96,7 +110,11 @@
       saveSpeed: (rate) => { if (speedRate) speedRate.value = rate; },
       delay: () => preferences().actionDelay * 1000,
       requestInterval: () => preferences().requestInterval * 1000,
-      resolve: getAnswer,
+      resolve: (question, context) => queryHelperAnswer(question, context, {
+        primary: cloneLatestValue(config.queryApis[0]), fallback: getHelperFallback(config),
+        waitSeconds: config.helperFallbackModel.waitSeconds, enabled: config.helperFallbackModel.enabled,
+        resolve: getAnswer, log: (message, type) => logs.addLog(message, type)
+      }),
       loadImages: loadJcedutecImages,
       addQuestion: (parsed) => {
         const question = vue.reactive(parsed);
@@ -114,44 +132,44 @@
     };
     const stop = () => {
       clearInterval(timer); timer = null;
-      clearTimeout(wakeTimer); wakeTimer = null; dirty = false;
+      wakeToken = null; dirty = false;
     };
     const mediaEvents = ["loadedmetadata", "loadeddata", "canplay", "playing", "waiting", "ended", "pause", "emptied", "error", "ratechange"];
     const onMedia = (event) => { if (event.target?.tagName === "VIDEO") schedule(); };
-    const modalSelector = ".ant-modal-root, .ant-modal-wrap, .ant-modal-content, .geetest_panel, .geetest_holder, .yidun_popup, [class*='captcha']";
+    const modalSelector = ".ant-modal-root, .ant-modal-wrap, .ant-modal-content, .exam-modal, .geetest_panel, .geetest_holder, .yidun_popup, [class*='captcha']";
     const relevantSelector = "video, source, " + modalSelector;
     const observer = new MutationObserver((records) => {
-      if (records.some((record) => record.target.nodeType === 1 &&
-          (record.target.matches(relevantSelector) || record.target.closest(modalSelector)) ||
+      if (records.some((record) => (record.target.nodeType === 1 ? record.target.matches(relevantSelector) || record.target.closest(modalSelector) : record.target.parentElement?.closest(modalSelector)) ||
           Array.from(record.addedNodes).concat(Array.from(record.removedNodes)).some((node) =>
             node.nodeType === 1 && (node.matches(relevantSelector) || node.querySelector(relevantSelector))))) schedule();
     });
-    observer.observe(_unsafeWindow.document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ["src", "style", "class"]});
+    observer.observe(_unsafeWindow.document.documentElement, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["src", "style", "class", "disabled", "value", "type", "aria-hidden"]});
     for (const event of mediaEvents) _unsafeWindow.document.addEventListener(event, onMedia, true);
     _unsafeWindow.addEventListener("popstate", schedule);
-    const stopConfig = vue.watch(() => [config.platformParams.jcedutec, config.queryApis, config.modelSearch, config.helperPreferences], schedule, {deep: true});
+    const stopConfig = vue.watch(() => [config.platformParams.jcedutec, config.queryApis, config.modelSearch, config.helperFallbackModel, config.helperPreferences], schedule, {deep: true});
     const dispose = () => {
       if (disposed) return;
       disposed = true;
       stop(); observer.disconnect(); stopConfig();
       for (const event of mediaEvents) _unsafeWindow.document.removeEventListener(event, onMedia, true);
       _unsafeWindow.removeEventListener("popstate", schedule);
-      controller.dispose(); panelUI?.dispose();
+      controller.dispose(); panelUI?.dispose(); coordinator.dispose();
+      helperTabCoordinator = null; helperNetworkStatus = null;
       _unsafeWindow.removeEventListener("pagehide", onHide);
       _unsafeWindow.removeEventListener("pageshow", onShow);
       if (_unsafeWindow.__courseHelperSession291?.controller === controller) delete _unsafeWindow.__courseHelperSession291;
     };
     const onHide = (event) => {
       suspended = true; stop();
-      if (event.persisted) controller.suspend(); else dispose();
+      if (event.persisted) { coordinator.suspend(); controller.suspend(); } else dispose();
     };
-    const onShow = (event) => { if (event.persisted && !disposed) { suspended = false; controller.restore(); start(); panelUI?.clamp(); } };
+    const onShow = (event) => { if (event.persisted && !disposed) { suspended = false; coordinator.restore(); controller.restore(); start(); panelUI?.clamp(); } };
     _unsafeWindow.__courseHelperSession291 = {controller};
     _unsafeWindow.addEventListener("pagehide", onHide);
     _unsafeWindow.addEventListener("pageshow", onShow);
     vue.onMounted(() => {
       const panel = instance.proxy.$el.closest(".main-page");
-      if (panel) panelUI = mountJcedutecPanel(panel, config, controller);
+      if (panel) panelUI = mountJcedutecPanel(panel, config, controller, {takeover: () => coordinator.takeover(), diagnostic: () => createHelperDiagnostic(config, controller.getStatus(), logs.logList, _unsafeWindow.location)});
     });
     vue.onBeforeUnmount(dispose);
     start();

@@ -5,7 +5,10 @@
     const currentRun = () => {
       const view = options.getView();
       if (!view?.recordId) return null;
-      if (!runs.has(String(view.recordId))) runs.set(String(view.recordId), {id: String(view.recordId), answers: new Map(), phase: "answering", receipt: "pending", at: 0});
+      if (!runs.has(String(view.recordId))) {
+        const saved = options.sharedReceipts?.get("exam:" + view.recordId);
+        runs.set(String(view.recordId), {id: String(view.recordId), answers: new Map(), phase: saved ? "sent" : "answering", receipt: saved?.status || "pending", at: saved?.at || 0});
+      }
       return runs.get(String(view.recordId));
     };
     const values = (value) => (Array.isArray(value) ? value : value == null ? [] : [value]).map(String).sort();
@@ -40,6 +43,7 @@
         let payload;
         try { payload = xhr.responseType === "json" ? xhr.response : JSON.parse(xhr.responseText); } catch {}
         run.receipt = xhr.status >= 200 && xhr.status < 300 && payload?.success === true ? "accepted" : payload?.success === false ? "rejected" : "unknown";
+        options.sharedReceipts?.record("exam:" + id, run.receipt);
         run.message = typeof payload?.message === "string" ? payload.message.slice(0, 200) : "";
         const label = run.receipt === "accepted" ? "网站已接受交卷" : run.receipt === "rejected" ? "网站拒绝交卷" : "交卷尚未确认";
         for (const answer of run.answers.values()) answer.question.submissionStatus = label;
@@ -89,6 +93,10 @@
         if (dialogs.length !== 1) return;
         const confirm = Array.from(dialogs[0].querySelectorAll(".ant-modal-confirm-btns button")).find((button) => visible(button) && !button.disabled && /^(确定|OK)$/i.test(text(button)));
         if (!confirm || !options.isCurrent(state)) return;
+        if (options.sharedReceipts?.reserve("exam:" + run.id) === false) {
+          run.phase = "sent"; run.at = Date.now(); run.receipt = "unknown";
+          updateStatus(); return;
+        }
         state.phase = "exam-sent";
         run.phase = "sent";
         run.at = Date.now();

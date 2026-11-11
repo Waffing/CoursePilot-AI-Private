@@ -1,0 +1,12 @@
+✔ reshaped panel supports dragging and keyboard minimize and restore without stopping its controller (2301.932ms)
+✔ maximum font and panel width stay usable at 320 pixels and browser zoom (1260.899ms)
+✔ existing Chaoxing and Zhihuishu handlers, popup engine and shared UI are byte-preserved (3.2324ms)
+✔ metadata, UI and key controls match the new answer source (0.6941ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4518.5176

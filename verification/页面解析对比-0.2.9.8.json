@@ -1,0 +1,19 @@
+{
+  "environment": "isolated-headless-edge",
+  "browserVersion": "157.0.4341.42",
+  "scenario": "20 unchanged-question checks after initial fill, no real model/server calls",
+  "measurements": [
+    {
+      "version": "0.2.9.7",
+      "checks": 20,
+      "cloneCalls": 300,
+      "elapsedMs": 4.899999998509884
+    },
+    {
+      "version": "0.2.9.8",
+      "checks": 20,
+      "cloneCalls": 0,
+      "elapsedMs": 1.699999999254942
+    }
+  ]
+}
