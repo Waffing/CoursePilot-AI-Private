@@ -83,3 +83,18 @@ test('distribution contains no old notice request or announcement component',()=
  assert(!full.includes('https://api.tikuhai.com/def/notice'));assert(!full.includes('getNotice'));assert(!full.includes('announcements.value'));
  assert(!/^\/\/ @antifeature\s+ads/m.test(full));
 });
+test('Wisdom next setting migrates to manual reminder without resetting values or models',()=>{
+ const full=fs.readFileSync(path.join(__dirname,'..','course-helper.user.js'),'utf8');
+ const start=full.indexOf('    const previousPlatform = storedConfig?.platformParams?.jcedutec;');
+ const end=full.indexOf('    const mergedConfig = mergeByLatestFields(defaultConfig, storedConfig);',start);
+ assert(start>=0&&end>start,'configuration migration block must exist');
+ for(const value of [true,false]){
+  const storedConfig={queryApis:[{model:'saved-model',token:'SAVED_TEST_KEY'}],platformParams:{wisdomStudy:{parts:[{params:[{name:'完成后自动下一视频',value}]}]}}};
+  const originalModel=JSON.stringify(storedConfig.queryApis);
+  vm.runInNewContext(full.slice(start,end),{storedConfig});
+  assert.equal(storedConfig.platformParams.wisdomStudy.parts[0].params[0].name,'完成后提醒手动切课');
+  assert.equal(storedConfig.platformParams.wisdomStudy.parts[0].params[0].value,value);
+  assert.equal(JSON.stringify(storedConfig.queryApis),originalModel);
+ }
+ assert.match(full, /name: "完成后提醒手动切课", value: true/);
+});

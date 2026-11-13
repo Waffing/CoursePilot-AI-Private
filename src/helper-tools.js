@@ -109,7 +109,7 @@
       issues: (Array.isArray(state.recognition.issues) ? state.recognition.issues : []).slice(0, 10).map(redact)
     };
     return JSON.stringify({
-      version: "0.2.9.12", page: location.origin + location.pathname,
+      version: "0.2.9.13", page: location.origin + location.pathname,
       state: {label: redact(state.label), detail: redact(state.detail), ...(recognition ? {recognition} : {})},
       preferences: getHelperPreferences(config.helperPreferences),
       logs: logs.slice(-20).map((item) => ({time: redact(item.time), type: item.type, message: redact(item.message)}))

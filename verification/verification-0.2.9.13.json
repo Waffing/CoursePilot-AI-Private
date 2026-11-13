@@ -1,0 +1,66 @@
+{
+  "version": "0.2.9.13",
+  "checkedAt": "2026-11-13T07:06:36.245Z",
+  "rootCause": {
+    "trigger": "Old controller invokes next.click() inside website player after a successful progress save.",
+    "officialBehavior": "Mounted player capture listener rejects untrusted clicks and calls exception handler, which pauses and redirects to the home page after 3 seconds. Directory handler also checks untrusted PointerEvent.",
+    "officialComponent": {
+      "url": "https://wisdom-mooc.zhihuishu.com/assets/index-QJOUvpDU.js",
+      "fetchedOn": "2026-11-13",
+      "bytes": 1061290,
+      "sha256": "2eadbe0f6c66edf25c9f5c9f60afa3e7d3a8f57cb941da8bda57494a2793d59c",
+      "anchors": [
+        "Ee: mounted player click listener",
+        "ve: pause and home redirect",
+        "gn: directory event check"
+      ]
+    },
+    "beforeFix": {
+      "browserTotal": 38,
+      "passed": 37,
+      "failed": 1,
+      "failingScenario": "website trusted-click guard is not triggered after a saved video ends",
+      "error": "scripted next clicks trigger the website home redirect guard"
+    }
+  },
+  "behavior": "No scripted Wisdom study-page course navigation. Wait for successful save, request manual next, and resume when a new video source loads. Original reminder value and model settings migrate without reset.",
+  "checks": {
+    "nodeTests": {
+      "passed": 31,
+      "total": 31
+    },
+    "browserSource": {
+      "passed": 40,
+      "total": 40
+    },
+    "browserDistribution": {
+      "passed": 40,
+      "total": 40
+    },
+    "testEvidence": "Counts recorded from executed Node suite and browser tool results in this session; source and distribution use the same 40 scenarios.",
+    "syntax": true,
+    "deterministicBuild": true,
+    "metadataIdentical": true,
+    "distributionControllerIdentical": true,
+    "secretPatternScan": true,
+    "diffCheck": true,
+    "fullScriptSmoke": {
+      "version": "0.2.9.13",
+      "beforeSave": "等待网站确认",
+      "afterSave": "等待手动切课",
+      "playerClicks": 0,
+      "submits": 0,
+      "runtimeErrors": [],
+      "receiptTransport": "Isolated fetch response, no real progress request."
+    }
+  },
+  "limitations": [
+    "Browser media, model answers and receipts are simulated.",
+    "No real signed-in classroom acceptance; external Edge login/DOM was unavailable.",
+    "Manual next is required. No claim of undetectability or fabricated learning progress."
+  ],
+  "files": {
+    "course-helper.user.js": "6A8C0AAC72C99629C5290BFC0F5BE3AB93A208F23088FE530584145A4C8AA99F",
+    "course-helper.meta.js": "92ECAACDEAA9EEE3348B9BEBE5F1328C89A35603F75BD51502840A9FBA81DBFB"
+  }
+}

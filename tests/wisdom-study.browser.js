@@ -250,33 +250,59 @@ window.runWisdomStudyTests = async function () {
   await test('standby tab never queries or submits', async () => {
     const h = harness(); h.state.standby = true; await h.solve(); assert(h.state.answers === 0 && h.state.submits === 0, 'standby tab must do nothing');
   });
-  await test('video end waits for saved learning receipt then advances only once', async () => {
-    const h = harness(); h.popup.remove(); h.media.ended = true; h.media.currentTime = 20; await h.tick();
-    assert(h.state.next === 0, 'must wait for website progress save');
-    h.receipt('progress'); await h.tick(); await h.tick(); assert(h.state.next === 1, 'must advance once');
+  await test('website trusted-click guard is not triggered after a saved video ends', async () => {
+    const h = harness(); h.popup.remove(); h.media.ended = true; h.media.currentTime = 20;
+    let rejectedClicks = 0;
+    h.host.querySelector('#container').addEventListener('click', event => { if (!event.isTrusted) rejectedClicks++; }, true);
+    await h.tick(); h.receipt('progress'); await h.tick(); await h.tick();
+    assert(rejectedClicks === 0 && h.state.next === 0, 'scripted next clicks trigger the website home redirect guard');
+    assert(h.state.status.label === '等待手动切课' && /手动/.test(h.state.status.detail), 'must clearly request a genuine user next action');
   });
-  await test('same video element with a new source starts next video and can advance again', async () => {
+  await test('video end waits for saved learning receipt then asks for manual next without clicking', async () => {
+    const h = harness(); h.popup.remove(); h.media.ended = true; h.media.currentTime = 20; await h.tick();
+    assert(h.state.next === 0 && h.state.status.label === '等待网站确认', 'must wait for website progress save');
+    h.receipt('progress'); await h.tick(); await h.tick();
+    assert(h.state.next === 0 && h.state.status.label === '等待手动切课', 'must request manual next only after save');
+  });
+  await test('manual source change on the same video resumes and requires a fresh progress save', async () => {
     const h = harness(); h.popup.remove(); h.media.ended = true; h.media.currentTime = 20; await h.tick(); h.receipt('progress'); await h.tick();
     h.video.src = 'https://example.invalid/lesson-2.mp4'; h.media.ended = false; h.media.currentTime = 0; h.media.paused = true; await h.tick();
-    assert(h.state.plays === 1, 'must play new source on reused element');
-    h.media.ended = true; h.media.currentTime = 20; await h.tick(); h.receipt('progress'); await h.tick(); assert(h.state.next === 2, 'second lesson must advance');
+    assert(h.state.plays === 1 && h.state.status.label === '播放中', 'must play new source on reused element');
+    h.media.ended = true; h.media.currentTime = 20; await h.tick();
+    assert(h.state.status.label === '等待网站确认', 'new lesson needs its own save');
+    h.receipt('progress'); await h.tick();
+    assert(h.state.next === 0 && h.state.status.label === '等待手动切课', 'second lesson must also avoid synthetic navigation');
   });
-  await test('late progress response for prior source cannot advance new lesson', async () => {
+  await test('late progress response for prior source cannot mark the new lesson saved', async () => {
     const h = harness(); h.popup.remove(); h.media.currentTime = 20; h.media.ended = true; await h.tick(); const old = h.capture('progress');
     h.video.src = 'https://example.invalid/lesson-2.mp4'; await h.tick(); h.receipt('progress', true, old); await h.tick();
-    assert(h.state.next === 0, 'old save receipt must not apply to new source');
+    assert(h.state.next === 0 && h.state.status.label === '等待网站确认', 'old save receipt must not apply to new source');
   });
   await test('autoplay rejection prompts once rather than repeatedly calling play', async () => {
     const h = harness(); h.popup.remove(); h.state.playError = true; await h.tick(); await h.tick(); await h.tick();
     assert(h.state.plays === 1, 'must not hammer autoplay');
   });
-  await test('disabled auto-next setting prevents advancement', async () => {
+  await test('disabled next reminder reports completion without navigation', async () => {
     const h = harness(); h.popup.remove(); h.state.settings.nextCourse = false; h.media.ended = true; h.media.currentTime = 20; await h.tick(); h.receipt('progress'); await h.tick();
-    assert(h.state.next === 0, 'auto-next setting must be honored');
+    assert(h.state.next === 0 && h.state.status.label === '播放完成', 'reminder setting must be honored');
   });
-  await test('disabled final next button marks course end', async () => {
+  await test('unavailable next button does not claim course completion or trigger navigation', async () => {
     const h = harness(); h.popup.remove(); h.host.querySelector('.nextButton').disabled = true; h.media.ended = true; h.media.currentTime = 20; await h.tick(); h.receipt('progress'); await h.tick();
-    assert(h.state.next === 0, 'must not click disabled last button');
+    assert(h.state.next === 0 && h.state.status.label === '等待手动切课', 'must leave directory and course-end decisions to the user');
+  });
+  await test('rejected or early progress receipts do not announce a saved lesson', async () => {
+    const h = harness(); h.popup.remove(); h.media.currentTime = 10; await h.tick(); const early = h.capture('progress');
+    h.media.ended = true; h.media.currentTime = 20; h.receipt('progress', true, early); await h.tick();
+    assert(h.state.status.label === '等待网站确认', 'early save is not final confirmation');
+    h.receipt('progress', false); h.state.now += 16000; await h.tick();
+    assert(h.state.next === 0 && h.state.status.label === '需要人工处理', 'rejected final save must not allow progression');
+  });
+  await test('unrelated next links and the website player are never clicked at completion', async () => {
+    const h = harness(); h.popup.remove(); h.host.querySelector('.nextButton').remove();
+    const link = document.createElement('a'); link.className = 'nextChapter'; link.href = 'https://www.zhihuishu.com/'; link.textContent = '下一节';
+    let clicked = 0; link.addEventListener('click', event => { event.preventDefault(); clicked++; }); h.host.append(link);
+    h.media.ended = true; h.media.currentTime = 20; await h.tick(); h.receipt('progress'); await h.tick();
+    assert(clicked === 0 && h.state.status.label === '等待手动切课', 'must not follow broad next-like links');
   });
   await test('accepted quiz can continue using the explicit website continue button', async () => {
     const h = harness(); await h.solve(); h.receipt('popup');

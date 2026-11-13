@@ -107,7 +107,7 @@
       if (!video) return null;
       const source = sourceOf(video);
       if (!media || media.video !== video || media.source !== source) {
-        media = { video, source, saved: false, advanced: false, playPending: false, playBlocked: false, endedAt: null };
+        media = { video, source, saved: false, playPending: false, playBlocked: false, endedAt: null };
       }
       return media;
     }
@@ -288,11 +288,11 @@
       if (video.ended) {
         candidate.endedAt ??= now();
         if (!candidate.saved) { publish(now() - candidate.endedAt > 15000 ? '需要人工处理' : '等待网站确认', '视频已自然结束，等待网站保存学习记录'); return; }
-        if (candidate.advanced) { publish('切换视频', '已点击下一节，等待新视频加载'); return; }
-        if (!options.settings().nextCourse) { publish('播放完成', '自动下一节已关闭'); return; }
-        const next = doc.querySelector('#container .nextButton, .video-play .nextButton, .nextChapter, button.nextBtn');
-        if (!usable(next)) { publish('播放完成', '已到最后一节或下一节暂不可用，请检查目录'); return; }
-        candidate.advanced = true; next.click(); publish('切换视频', '学习记录已保存，已点击下一节'); return;
+        // The website rejects synthetic clicks in its player and redirects home.
+        // Let the user operate the native next control; source changes still resume normally.
+        publish(options.settings().nextCourse ? '等待手动切课' : '播放完成', options.settings().nextCourse
+          ? '学习记录已保存，请手动点击网站“下一节”或课程目录；新视频加载后自动续播'
+          : '学习记录已保存；切课提醒已关闭，需要时请手动选择下一视频'); return;
       }
       if (video.readyState < 1) { publish('缓冲中', '等待网站加载视频'); return; }
       if (options.settings().play && video.paused && candidate.source && !candidate.playPending && !candidate.playBlocked) {
@@ -304,7 +304,7 @@
         finally { candidate.playPending = false; }
       }
       if (candidate !== currentMedia() || !allowed()) return;
-      publish(candidate.playBlocked ? '需要人工处理' : video.paused ? '等待播放' : '播放中', candidate.playBlocked ? '自动播放被阻止，请手动点击一次网站播放按钮' : '使用网站原播放器；自然播放，完成后继续下一节');
+      publish(candidate.playBlocked ? '需要人工处理' : video.paused ? '等待播放' : '播放中', candidate.playBlocked ? '自动播放被阻止，请手动点击一次网站播放按钮' : '使用网站原播放器；自然播放，切课由用户操作');
     }
     async function tick() {
       if (disposed || suspended) return;

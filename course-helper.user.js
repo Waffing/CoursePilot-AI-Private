@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树--网课小助手【大模型版】
 // @namespace    noshuang
-// @version      0.2.9.12
+// @version      0.2.9.13
 // @downloadURL  https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js
 // @updateURL    https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.meta.js
 // @homepageURL  https://github.com/Waffing/CoursePilot-AI-Private
@@ -963,6 +963,10 @@
       const old = part.params?.find((param) => param.name === "启用北部湾助手");
       if (old && !part.params.some((param) => param.name === "启用助手")) old.name = "启用助手";
     }
+    for (const part of storedConfig?.platformParams?.wisdomStudy?.parts || []) {
+      const old = part.params?.find((param) => param.name === "完成后自动下一视频");
+      if (old && !part.params.some((param) => param.name === "完成后提醒手动切课")) old.name = "完成后提醒手动切课";
+    }
     const mergedConfig = mergeByLatestFields(defaultConfig, storedConfig);
     if (!Object.prototype.hasOwnProperty.call(storedConfig?.helperPreferences || {}, "actionDelay")) {
       const previousDelay = storedConfig?.otherParams?.params?.[0]?.value;
@@ -1103,7 +1107,7 @@
               { name: "静音播放", value: false, type: "boolean" },
               { name: "AI随堂练习自动答题", value: true, type: "boolean" },
               { name: "核对选项后自动提交", value: true, type: "boolean" },
-              { name: "完成后自动下一视频", value: true, type: "boolean" }
+              { name: "完成后提醒手动切课", value: true, type: "boolean" }
             ] }]
           },
           jcedutec: {
@@ -7400,7 +7404,7 @@
       issues: (Array.isArray(state.recognition.issues) ? state.recognition.issues : []).slice(0, 10).map(redact)
     };
     return JSON.stringify({
-      version: "0.2.9.12", page: location.origin + location.pathname,
+      version: "0.2.9.13", page: location.origin + location.pathname,
       state: {label: redact(state.label), detail: redact(state.detail), ...(recognition ? {recognition} : {})},
       preferences: getHelperPreferences(config.helperPreferences),
       logs: logs.slice(-20).map((item) => ({time: redact(item.time), type: item.type, message: redact(item.message)}))
@@ -8539,7 +8543,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     body.insertBefore(mini, toolbar);
     const version = document.createElement("span");
     version.className = "helper-version";
-    version.textContent = "0.2.9.12 · Waffing";
+    version.textContent = "0.2.9.13 · Waffing";
     panel.querySelector(".title")?.append(version);
     const zoomIcons = Array.from(panel.querySelectorAll(".zoom-icon"));
     const onZoomKey = (event) => {
@@ -8605,7 +8609,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       panel.dataset.helperTheme = values.theme === "system" ? media.matches ? "dark" : "light" : values.theme;
       panel.dataset.helperDensity = values.density;
       panel.dataset.helperMinimized = String(config.isMinus === true);
-      version.textContent = config.isMinus === true ? "Waffing" : "0.2.9.12 · Waffing";
+      version.textContent = config.isMinus === true ? "Waffing" : "0.2.9.13 · Waffing";
       panel.style.setProperty("--helper-font-size", values.fontSize + "px");
       panel.style.setProperty("--helper-panel-width", (config.menuIndex === "1" ? Math.min(900, values.panelWidth * 1.8) : values.panelWidth) + "px");
       panel.style.setProperty("--helper-opacity", String(values.opacity / 100));
@@ -8926,7 +8930,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       if (!video) return null;
       const source = sourceOf(video);
       if (!media || media.video !== video || media.source !== source) {
-        media = { video, source, saved: false, advanced: false, playPending: false, playBlocked: false, endedAt: null };
+        media = { video, source, saved: false, playPending: false, playBlocked: false, endedAt: null };
       }
       return media;
     }
@@ -9107,11 +9111,11 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       if (video.ended) {
         candidate.endedAt ??= now();
         if (!candidate.saved) { publish(now() - candidate.endedAt > 15000 ? '需要人工处理' : '等待网站确认', '视频已自然结束，等待网站保存学习记录'); return; }
-        if (candidate.advanced) { publish('切换视频', '已点击下一节，等待新视频加载'); return; }
-        if (!options.settings().nextCourse) { publish('播放完成', '自动下一节已关闭'); return; }
-        const next = doc.querySelector('#container .nextButton, .video-play .nextButton, .nextChapter, button.nextBtn');
-        if (!usable(next)) { publish('播放完成', '已到最后一节或下一节暂不可用，请检查目录'); return; }
-        candidate.advanced = true; next.click(); publish('切换视频', '学习记录已保存，已点击下一节'); return;
+        // The website rejects synthetic clicks in its player and redirects home.
+        // Let the user operate the native next control; source changes still resume normally.
+        publish(options.settings().nextCourse ? '等待手动切课' : '播放完成', options.settings().nextCourse
+          ? '学习记录已保存，请手动点击网站“下一节”或课程目录；新视频加载后自动续播'
+          : '学习记录已保存；切课提醒已关闭，需要时请手动选择下一视频'); return;
       }
       if (video.readyState < 1) { publish('缓冲中', '等待网站加载视频'); return; }
       if (options.settings().play && video.paused && candidate.source && !candidate.playPending && !candidate.playBlocked) {
@@ -9123,7 +9127,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
         finally { candidate.playPending = false; }
       }
       if (candidate !== currentMedia() || !allowed()) return;
-      publish(candidate.playBlocked ? '需要人工处理' : video.paused ? '等待播放' : '播放中', candidate.playBlocked ? '自动播放被阻止，请手动点击一次网站播放按钮' : '使用网站原播放器；自然播放，完成后继续下一节');
+      publish(candidate.playBlocked ? '需要人工处理' : video.paused ? '等待播放' : '播放中', candidate.playBlocked ? '自动播放被阻止，请手动点击一次网站播放按钮' : '使用网站原播放器；自然播放，切课由用户操作');
     }
     async function tick() {
       if (disposed || suspended) return;
@@ -9205,7 +9209,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     if (!isWisdomStudyPage() || page.top !== page.self || wisdomStudySession) return;
     const config = useConfigStore(), logs = useLogStore(), questions = useQuestionStore();
     const params = config.platformParams.wisdomStudy.parts[0].params;
-    const labels = { enabled: '启用助手', play: '视频自动播放和续播', muted: '静音播放', answer: 'AI随堂练习自动答题', submit: '核对选项后自动提交', nextCourse: '完成后自动下一视频' };
+    const labels = { enabled: '启用助手', play: '视频自动播放和续播', muted: '静音播放', answer: 'AI随堂练习自动答题', submit: '核对选项后自动提交', nextCourse: '完成后提醒手动切课' };
     const preferences = () => getHelperPreferences(config.helperPreferences);
     let panelUI = null, disposed = false, suspended = false, scheduled = false, heartbeat = null, observer;
     let coordinator, controller;
@@ -9282,7 +9286,8 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       });
     });
     vue.onBeforeUnmount(dispose);
-    logs.addLog('智慧树学习助手已启动：AI随堂练习答题、确认后续播、自然结束并保存后切课', 'success');
+    logs.addLog('智慧树学习助手已启动：AI随堂练习答题、确认后续播、保存后提醒手动切课', 'success');
+    logs.addLog('网站要求真实点击切课，请手动点击网站下一节；新视频加载后自动续播', 'warning');
     logs.addLog('遇到验证码、登录验证或未知提交结果时暂停；本版本仍需真实登录课堂验收', 'warning');
     start();
   };
