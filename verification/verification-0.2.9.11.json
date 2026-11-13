@@ -1,0 +1,13 @@
+{
+  "version": "0.2.9.11",
+  "scope": "wisdom-mooc.zhihuishu.com/study/index AI popup quiz and continuous video flow",
+  "build": "passed",
+  "syntax": "passed",
+  "nodeTests": { "total": 29, "passed": 29, "failed": 0, "legacyStudyTestsIncluded": 11 },
+  "browserFlowTests": { "total": 21, "passed": 21, "failed": 0, "fixture": "tests/wisdom-study.html", "dom": "real", "modelResponses": "simulated", "mediaStates": "simulated", "siteReceipts": "simulated" },
+  "bundleSmoke": { "panelMounted": true, "toolbarMounted": true, "statusDisplayed": true, "missingModelConfigReported": true, "realModelRequests": false },
+  "liveCourseAcceptance": "not performed: tool browser redirected to login center and cannot reuse external Edge login state",
+  "learningRecordsForged": false,
+  "undetectableGuarantee": false,
+  "credentialsCollected": false
+}

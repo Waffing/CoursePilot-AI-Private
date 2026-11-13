@@ -1,11 +1,11 @@
-  async function loadJcedutecImages(sources, context) {
+  async function loadJcedutecImages(sources, context, allowedHosts = /(^|\.)jcedutec\.cn$/i) {
     if (sources.length > 6) return Promise.reject(new Error("本题图片超过6张，请人工处理"));
     const assets = [];
     for (const source of sources) {
       if (context.beforeRequest && !await context.beforeRequest()) throw new Error("图片请求已取消");
       assets.push(await new Promise((resolve, reject) => {
       const url = new URL(source, window.location.href);
-      if (!["https:", "http:"].includes(url.protocol) || !/(^|\.)jcedutec\.cn$/i.test(url.hostname)) {
+      if (!["https:", "http:"].includes(url.protocol) || !allowedHosts.test(url.hostname)) {
         reject(new Error("题目图片不在本站资源域名内，请人工确认"));
         return;
       }

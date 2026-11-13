@@ -102,7 +102,7 @@
         .replace(/\b\d{10,}\b/g, "[编号已隐藏]").slice(0, 500);
     };
     return JSON.stringify({
-      version: "0.2.9.9", page: location.origin + location.pathname,
+      version: "0.2.9.11", page: location.origin + location.pathname,
       state: {label: redact(state.label), detail: redact(state.detail)},
       preferences: getHelperPreferences(config.helperPreferences),
       logs: logs.slice(-20).map((item) => ({time: redact(item.time), type: item.type, message: redact(item.message)}))

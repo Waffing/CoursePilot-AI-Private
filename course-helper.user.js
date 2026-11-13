@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树--网课小助手【大模型版】
 // @namespace    noshuang
-// @version      0.2.9.10
+// @version      0.2.9.11
 // @downloadURL  https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js
 // @updateURL    https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.meta.js
 // @homepageURL  https://github.com/Waffing/CoursePilot-AI-Private
@@ -45,7 +45,7 @@
 (function (vue, pinia, rxjs, md5, ElementPlus) {
   'use strict';
   const helperPage = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-  if (helperPage.location.hostname === 'bbgu.jcedutec.cn' && helperPage.top === helperPage.self) {
+  if (['bbgu.jcedutec.cn', 'wisdom-mooc.zhihuishu.com'].includes(helperPage.location.hostname) && helperPage.top === helperPage.self) {
     if (helperPage.__courseHelperMount291) return;
     helperPage.__courseHelperMount291 = true;
   }
@@ -333,7 +333,7 @@
     return { url: getModelEndpoint(settings.url, protocol, "answer", settings.model), headers: getModelHeaders(settings), method: "POST", data: JSON.stringify(body) };
   };
   const requestModelJson = async (options, context = {}, timeout = 120000) => {
-    const sharedPacer = typeof getSharedHelperPacer === "function" && typeof location !== "undefined" && location.hostname === "bbgu.jcedutec.cn" ? getSharedHelperPacer() : null;
+    const sharedPacer = typeof getSharedHelperPacer === "function" && typeof location !== "undefined" && (location.hostname === "bbgu.jcedutec.cn" || isWisdomStudyPage()) ? getSharedHelperPacer() : null;
     if (sharedPacer && helperTabCoordinator && !helperTabCoordinator.isOwner()) return apiError("另一标签页正在运行，请在该页操作或接管后重试");
     if (sharedPacer && !context.beforeRequest) {
       const previousContext = context;
@@ -1095,6 +1095,17 @@
               }]
             }]
           },
+          wisdomStudy: {
+            name: "智慧树学习助手",
+            parts: [{ name: "视频与AI随堂练习", params: [
+              { name: "启用助手", value: true, type: "boolean" },
+              { name: "视频自动播放和续播", value: true, type: "boolean" },
+              { name: "静音播放", value: false, type: "boolean" },
+              { name: "AI随堂练习自动答题", value: true, type: "boolean" },
+              { name: "核对选项后自动提交", value: true, type: "boolean" },
+              { name: "完成后自动下一视频", value: true, type: "boolean" }
+            ] }]
+          },
           jcedutec: {
             name: "网课小助手",
             parts: [{ name: "视频与练习设置", params: [
@@ -1201,7 +1212,7 @@
           type
         };
         this.logList.push(log);
-        if (helperPage.location.hostname === "bbgu.jcedutec.cn" && this.logList.length > 300) this.logList.splice(0, this.logList.length - 300);
+        if ((helperPage.location.hostname === "bbgu.jcedutec.cn" || isWisdomStudyPage()) && this.logList.length > 300) this.logList.splice(0, this.logList.length - 300);
       }
     }
   });
@@ -7112,249 +7123,6 @@
       };
     }
   }
-  // 智慧树 /study/index 学习页适配；选择器仍需真实页面验收。
-  const ZHS_STUDY_SELECTORS = {
-    quizContainer: ['.videoInnerQuestion', '.poped', '.popContainer', '.video-quiz-wrap', '.questionPopWrap', '.innerQuestion'],
-    questionItem: ['.questionItem', '.examPaper_subject', '.subject-item', '.quiz-item', '.questionLi'],
-    questionTitle: ['.questionDetail', '.subject_describe div', '.stem-content', '.questionStem p', '.questionStem', 'p.detail', '.titleText'],
-    options: ['.questionOption', '.label', '.optionLi', '.option-item', '.answerItem'],
-    optionText: ['.node_detail', '.option-text', 'span.txt', 'p', 'span'],
-    confirmBtn: ['button.confirmBtn', '.sureBtn', 'button.submitBtn', 'button.confirmButton', 'button.sure-btn', '.confirmBtnBox button']
-  };
-  const _zhsFindEl = (selectors, root = _unsafeWindow.document) => {
-    for (const selector of selectors) {
-      const element = root.querySelector(selector);
-      if (element) return element;
-    }
-    return null;
-  };
-  const _zhsFindEls = (selectors, root = _unsafeWindow.document) => {
-    for (const selector of selectors) {
-      const elements = Array.from(root.querySelectorAll(selector));
-      if (elements.length) return elements;
-    }
-    return [];
-  };
-  const _zhsVisible = (element) => {
-    if (!element || element.isConnected === false) return false;
-    const style = _unsafeWindow.getComputedStyle(element);
-    return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && element.getClientRects().length > 0;
-  };
-  const _zhsSelected = (element) => {
-    if (element.querySelector('input')?.checked) return true;
-    if (element.getAttribute('aria-checked') === 'true') return true;
-    return /\b(active|checked|selected|is-checked)\b/.test(String(element.className || '')) ||
-      !!element.querySelector('.active, .checked, .selected, .is-checked');
-  };
-  const _zhsClickEl = (element) => {
-    if (!element) return false;
-    if (!_zhsSelected(element)) {
-      const input = element.querySelector('input');
-      if (input) input.click();
-      else element.click();
-    }
-    return _zhsSelected(element);
-  };
-  const _zhsMatchOption = (options, answer) => {
-    const normalize = (value) => {
-      const text = String(value).normalize('NFKC').replace(/\s+/g, '').toLowerCase();
-      if (/^(正确|是|对|√|t|true)$/.test(text)) return 'true';
-      if (/^(错误|否|错|×|f|false)$/.test(text)) return 'false';
-      return text;
-    };
-    const value = normalize(answer);
-    if (!value) return null;
-    const matches = Object.entries(options).filter(([text]) => normalize(text) === value);
-    return matches.length === 1 ? matches[0][1] : null;
-  };
-  const _zhsQuizInFlight = new WeakSet();
-  const _zhsQuizSubmitted = new WeakMap();
-  const _zhsHandleQuiz = async (logStore, questionStore, isCurrent = () => true) => {
-    const container = _zhsFindEl(ZHS_STUDY_SELECTORS.quizContainer);
-    if (!_zhsVisible(container) || !isCurrent() || _zhsQuizInFlight.has(container)) return false;
-    const fingerprint = () => container.textContent?.trim() || '';
-    const signature = fingerprint();
-    if (_zhsQuizSubmitted.get(container) === signature) return false;
-    _zhsQuizInFlight.add(container);
-    const current = () => isCurrent() && _zhsVisible(container) && fingerprint() === signature;
-    try {
-      await sleep(1.5);
-      if (!current()) return false;
-      const questionElements = _zhsFindEls(ZHS_STUDY_SELECTORS.questionItem, container);
-      if (!questionElements.length) return false;
-      logStore.addLog(`视频弹题：发现 ${questionElements.length} 道题`, 'primary');
-      let allFilled = true;
-      for (const [index, element] of questionElements.entries()) {
-        if (!current()) return false;
-        const titleElement = _zhsFindEl(ZHS_STUDY_SELECTORS.questionTitle, element);
-        const title = (titleElement?.textContent || '').trim();
-        const optionElements = _zhsFindEls(ZHS_STUDY_SELECTORS.options, element);
-        const options = Object.create(null);
-        const optionTexts = [];
-        for (const option of optionElements) {
-          const textElement = _zhsFindEl(ZHS_STUDY_SELECTORS.optionText, option);
-          const text = (textElement?.textContent || option.textContent || '').replace(/^[A-Za-z][.、\s]/, '').trim();
-          if (text) { options[text] = option; optionTexts.push(text); }
-        }
-        if (!title || new Set(optionTexts).size !== optionTexts.length) { allFilled = false; continue; }
-        const fields = [...element.querySelectorAll('input[type="text"], input:not([type]), textarea')].filter((field) => !field.disabled && !field.hidden);
-        const isJudge = optionTexts.length === 2 && optionTexts.every((text) => /^(正确|错误|是|否|对|错|true|false|√|×)$/i.test(text));
-        const isMulti = !!element.querySelector('input[type="checkbox"]');
-        const type = isJudge ? '判断题' : isMulti ? '多选题' : optionTexts.length ? '单选题' : fields.length ? '填空题' : '其他';
-        if (type === '其他') { allFilled = false; continue; }
-        const question = vue.reactive({
-          title, type, optionsText: optionTexts, options,
-          searchText: { stem: title, options: optionTexts },
-          answer: [], answerStatus: 'searching', workType: 'zhs', refer: _unsafeWindow.location.href
-        });
-        questionStore.addQuestion(question);
-        const response = await getAnswer(question, { isCurrent: current });
-        if (!current()) return false;
-        const values = getAnswerValues(response, question);
-        if (!values?.length) {
-          question.answerStatus = 'error';
-          question.answer = [response?.error?.message || '未获得答案'];
-          allFilled = false;
-          logStore.addLog(`弹题第${index + 1}题未获得答案`, 'danger');
-          continue;
-        }
-        question.answer = values;
-        let filled = true;
-        if (optionTexts.length) {
-          const matched = values.map((value) => _zhsMatchOption(options, value));
-          filled = matched.every(Boolean) && new Set(matched).size === matched.length && (isMulti || matched.length === 1);
-          if (filled) {
-            const targets = new Set(matched);
-            for (const option of optionElements) {
-              if (_zhsSelected(option) && !targets.has(option)) {
-                if (isMulti) (option.querySelector('input') || option).click();
-                else if (isJudge || type === '单选题') continue;
-              }
-            }
-            filled = matched.every((option) => _zhsClickEl(option));
-            filled = filled && optionElements.every((option) => _zhsSelected(option) === targets.has(option));
-          }
-        } else {
-          filled = fields.length === values.length;
-          if (filled) fields.forEach((field, fieldIndex) => {
-            const value = String(values[fieldIndex]);
-            const proto = field.tagName === 'TEXTAREA' ? _unsafeWindow.HTMLTextAreaElement?.prototype : _unsafeWindow.HTMLInputElement?.prototype;
-            const setter = proto && Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-            if (setter) setter.call(field, value);
-            else field.value = value;
-            const EventClass = field.ownerDocument?.defaultView?.Event || Event;
-            field.dispatchEvent(new EventClass('input', { bubbles: true }));
-            field.dispatchEvent(new EventClass('change', { bubbles: true }));
-            if (field.value !== value) filled = false;
-          });
-        }
-        question.answerStatus = filled ? 'success' : 'error';
-        allFilled = allFilled && filled;
-        logStore.addLog(`弹题第${index + 1}题${filled ? '已填选' : '填选未通过核对'}`, filled ? 'success' : 'danger');
-      }
-      if (!allFilled || !current()) return false;
-      await sleep(1);
-      if (!current()) return false;
-      const confirm = _zhsFindEl(ZHS_STUDY_SELECTORS.confirmBtn, container);
-      if (!confirm || confirm.disabled || confirm.getAttribute('aria-disabled') === 'true') return false;
-      _zhsQuizSubmitted.set(container, signature);
-      confirm.click();
-      logStore.addLog('弹题已点击提交，等待网站确认', 'primary');
-      return true;
-    } catch {
-      _zhsQuizSubmitted.delete(container);
-      logStore.addLog('弹题处理失败，已停止本次提交', 'danger');
-      return false;
-    } finally {
-      _zhsQuizInFlight.delete(container);
-    }
-  };
-  let _zhsStudyCleanup = null;
-  const useZhsStudyLogic = () => {
-    const page = _unsafeWindow;
-    if (page.location.hostname !== 'wisdom-mooc.zhihuishu.com' || !/^\/study\/index\/?$/.test(page.location.pathname)) return;
-    if (_zhsStudyCleanup) return;
-    const logStore = useLogStore();
-    const questionStore = useQuestionStore();
-    const configStore = useConfigStore();
-    questionStore.clearQuestion();
-    logStore.addLog('检测到智慧树学习页；本适配尚待真实页面验收', 'warning');
-    let disposed = false;
-    let quizTimer = null;
-    const listeners = new Map();
-    const isCurrent = () => !disposed && page.location.hostname === 'wisdom-mooc.zhihuishu.com' && /^\/study\/index\/?$/.test(page.location.pathname);
-    const handleQuiz = () => _zhsHandleQuiz(logStore, questionStore, isCurrent);
-    const goNextChapter = async () => {
-      if (configStore.platformParams.zhs.parts[0].params[0].value !== true) return;
-      await sleep(configStore.otherParams?.params?.[0]?.value ?? 3);
-      if (!isCurrent()) return;
-      const next = _zhsFindEl(['.nextChapter', 'button.nextBtn', '.next-chapter', '.studyBtn.next', '.go-next', '[data-action="next"]']);
-      if (next && !next.disabled && _zhsVisible(next)) {
-        next.click();
-        logStore.addLog('视频已结束，已点击下一章节；进度以网站记录为准', 'primary');
-      } else logStore.addLog('未找到可用的下一章节按钮，请手动切换', 'warning');
-    };
-    const bindVideo = (video) => {
-      if (listeners.has(video)) return;
-      const ended = () => { void goNextChapter(); };
-      const pause = () => {
-        void handleQuiz().then(async (handled) => {
-          if (!handled) return;
-          await sleep(1.5);
-          if (isCurrent() && !_zhsVisible(_zhsFindEl(ZHS_STUDY_SELECTORS.quizContainer))) {
-            video.play().catch(() => {});
-          }
-        });
-      };
-      video.addEventListener('ended', ended);
-      video.addEventListener('pause', pause);
-      listeners.set(video, { ended, pause });
-      // 保留网站当前倍速，不强制覆盖播放器或用户的选择。
-      if (video.paused && !video.ended && !_zhsVisible(_zhsFindEl(ZHS_STUDY_SELECTORS.quizContainer))) {
-        video.play().catch(() => logStore.addLog('请手动点击一次播放以允许自动播放', 'warning'));
-      }
-    };
-    const scanVideos = () => {
-      if (!isCurrent()) { dispose(); return; }
-      const doc = page.document;
-      doc.querySelectorAll('video').forEach(bindVideo);
-      doc.querySelectorAll('iframe').forEach((frame) => {
-        try { frame.contentDocument?.querySelectorAll('video').forEach(bindVideo); } catch {}
-      });
-      for (const [video, handlers] of listeners) {
-        if (video.isConnected === false) {
-          video.removeEventListener('ended', handlers.ended);
-          video.removeEventListener('pause', handlers.pause);
-          listeners.delete(video);
-        }
-      }
-    };
-    const observer = new MutationObserver(() => {
-      if (!isCurrent() || quizTimer !== null) return;
-      quizTimer = setTimeout(() => { quizTimer = null; void handleQuiz(); }, 150);
-    });
-    const videoTimer = setInterval(scanVideos, 3000);
-    const dispose = () => {
-      if (disposed) return;
-      disposed = true;
-      observer.disconnect();
-      clearInterval(videoTimer);
-      clearTimeout(quizTimer);
-      for (const [video, handlers] of listeners) {
-        video.removeEventListener('ended', handlers.ended);
-        video.removeEventListener('pause', handlers.pause);
-      }
-      listeners.clear();
-      page.removeEventListener('pagehide', dispose);
-      _zhsStudyCleanup = null;
-    };
-    _zhsStudyCleanup = dispose;
-    page.addEventListener('pagehide', dispose);
-    observer.observe(page.document.body || page.document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
-    scanVideos();
-    void handleQuiz();
-  };
-
   const useZhsAnswerLogic = async () => {
     hookError();
     const logStore = useLogStore();
@@ -7625,7 +7393,7 @@
         .replace(/\b\d{10,}\b/g, "[编号已隐藏]").slice(0, 500);
     };
     return JSON.stringify({
-      version: "0.2.9.9", page: location.origin + location.pathname,
+      version: "0.2.9.11", page: location.origin + location.pathname,
       state: {label: redact(state.label), detail: redact(state.detail)},
       preferences: getHelperPreferences(config.helperPreferences),
       logs: logs.slice(-20).map((item) => ({time: redact(item.time), type: item.type, message: redact(item.message)}))
@@ -8764,7 +8532,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     body.insertBefore(mini, toolbar);
     const version = document.createElement("span");
     version.className = "helper-version";
-    version.textContent = "0.2.9.9 · Waffing";
+    version.textContent = "0.2.9.11 · Waffing";
     panel.querySelector(".title")?.append(version);
     const zoomIcons = Array.from(panel.querySelectorAll(".zoom-icon"));
     const onZoomKey = (event) => {
@@ -8830,7 +8598,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       panel.dataset.helperTheme = values.theme === "system" ? media.matches ? "dark" : "light" : values.theme;
       panel.dataset.helperDensity = values.density;
       panel.dataset.helperMinimized = String(config.isMinus === true);
-      version.textContent = config.isMinus === true ? "Waffing" : "0.2.9.9 · Waffing";
+      version.textContent = config.isMinus === true ? "Waffing" : "0.2.9.11 · Waffing";
       panel.style.setProperty("--helper-font-size", values.fontSize + "px");
       panel.style.setProperty("--helper-panel-width", (config.menuIndex === "1" ? Math.min(900, values.panelWidth * 1.8) : values.panelWidth) + "px");
       panel.style.setProperty("--helper-opacity", String(values.opacity / 100));
@@ -8865,14 +8633,14 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     } };
   }
 
-  async function loadJcedutecImages(sources, context) {
+  async function loadJcedutecImages(sources, context, allowedHosts = /(^|\.)jcedutec\.cn$/i) {
     if (sources.length > 6) return Promise.reject(new Error("本题图片超过6张，请人工处理"));
     const assets = [];
     for (const source of sources) {
       if (context.beforeRequest && !await context.beforeRequest()) throw new Error("图片请求已取消");
       assets.push(await new Promise((resolve, reject) => {
       const url = new URL(source, window.location.href);
-      if (!["https:", "http:"].includes(url.protocol) || !/(^|\.)jcedutec\.cn$/i.test(url.hostname)) {
+      if (!["https:", "http:"].includes(url.protocol) || !allowedHosts.test(url.hostname)) {
         reject(new Error("题目图片不在本站资源域名内，请人工确认"));
         return;
       }
@@ -9042,6 +8810,396 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     start();
   };
 
+  // Observe website-owned requests only. Never fabricate answers, heartbeats or progress.
+  function observeWisdomStudyReceipts(page, notify, capture) {
+    const kindOf = (address) => {
+      try {
+        const url = new URL(String(address), page.location.href);
+        if (!/(^|\.)zhihuishu\.com$/i.test(url.hostname)) return '';
+        if (/\/batchSaveLessonPopupExamSaveAnswer\/?$/.test(url.pathname)) return 'popup';
+        if (/\/saveDatabaseIntervalTimeV2\/?$/.test(url.pathname)) return 'progress';
+      } catch {}
+      return '';
+    };
+    let disposed = false;
+    const pending = new Set();
+    const report = (kind, context, status, payload) => {
+      if (disposed || !context) return;
+      const accepted = status >= 200 && status < 300 && [0, 200].includes(payload?.code) && payload?.success !== false && payload?.data !== false;
+      notify({ kind, context, accepted, unknown: !payload || payload.code === undefined });
+    };
+    const proto = page.XMLHttpRequest?.prototype;
+    const oldOpen = proto?.open, oldSend = proto?.send, watched = new WeakMap();
+    function open(method, address, ...rest) {
+      const result = oldOpen.call(this, method, address, ...rest);
+      const kind = kindOf(address);
+      if (kind) watched.set(this, kind); else watched.delete(this);
+      return result;
+    }
+    function send(...args) {
+      const kind = watched.get(this), context = kind && capture(kind);
+      let handler;
+      if (context) {
+        const item = { xhr: this, handler: null };
+        handler = item.handler = () => {
+          pending.delete(item);
+          let payload;
+          try { payload = this.responseType === 'json' ? this.response : JSON.parse(this.responseText); } catch {}
+          report(kind, context, this.status, payload);
+        };
+        pending.add(item);
+        this.addEventListener('loadend', handler, { once: true });
+      }
+      try { return oldSend.apply(this, args); }
+      catch (error) { if (handler) this.removeEventListener('loadend', handler); throw error; }
+    }
+    if (proto) { proto.open = open; proto.send = send; }
+    const oldFetch = page.fetch;
+    function fetch(...args) {
+      const address = typeof args[0] === 'string' || args[0] instanceof URL ? args[0] : args[0]?.url;
+      const kind = kindOf(address), context = kind && capture(kind);
+      const result = oldFetch.apply(this, args);
+      if (context) result.then(response => {
+        if (!disposed) response.clone().json().then(payload => report(kind, context, response.status, payload), () => report(kind, context, response.status, null));
+      }, () => report(kind, context, 0, null));
+      return result;
+    }
+    if (oldFetch) page.fetch = fetch;
+    return () => {
+      disposed = true;
+      for (const item of pending) item.xhr.removeEventListener('loadend', item.handler);
+      pending.clear();
+      if (proto?.open === open) proto.open = oldOpen;
+      if (proto?.send === send) proto.send = oldSend;
+      if (page.fetch === fetch) page.fetch = oldFetch;
+    };
+  }
+
+  function createWisdomStudyController(page, options) {
+    const doc = page.document, now = options.now || Date.now;
+    const wait = options.wait || (ms => new Promise(resolve => setTimeout(resolve, ms)));
+    const visible = node => !!node?.isConnected && node.getClientRects().length > 0 && page.getComputedStyle(node).display !== 'none' && page.getComputedStyle(node).visibility !== 'hidden';
+    const text = node => (node?.textContent || '').replace(/\s+/g, ' ').trim();
+    const escape = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+    const log = (message, type = 'primary') => options.log?.(escape(message), type);
+    const usable = node => visible(node) && !node.disabled && node.getAttribute('aria-disabled') !== 'true' && !node.classList.contains('disabled');
+    const findVideo = () => Array.from(doc.querySelectorAll('#container video, .video-play video, video')).find(visible);
+    const sourceOf = video => video?.currentSrc || video?.getAttribute('src') || '';
+    let disposed = false, suspended = false, paused = false, busy = false, active = null, receipt = null, media = null;
+    let model = options.modelIdentity(), verificationSeen = false;
+    let status = { label: '准备学习', detail: '', paused: false, canRetry: false, cacheSize: 0 };
+    const records = new Map(), cache = new Map();
+    const owned = () => options.canRun?.() ?? true;
+    const enabled = () => !disposed && !suspended && !paused && owned() && options.settings().enabled;
+    const verification = () => Array.from(doc.querySelectorAll('.yidun_popup, .yidun_panel, .geetest_panel, [class*="captcha"], .face-id-mask, .faceid-wrapper, .el-dialog, .dialog-wrapper')).some(node => visible(node) &&
+      (node.matches('.yidun_popup, .yidun_panel, .geetest_panel, [class*="captcha"], .face-id-mask, .faceid-wrapper') || /人脸|身份验证|安全验证|滑动验证|验证码|重新登录|异常学习|诚信学习/.test(text(node))));
+    const allowed = () => enabled() && !verification();
+    function publish(label, detail = '', canRetry = false) {
+      status = { label, detail, canRetry, paused: !enabled(), standby: !owned(), cacheSize: cache.size,
+        speedText: media ? '倍速：' + (Number(media.video.playbackRate) || 1) + '×（使用网站播放器）' : '', speedRates: [], selectedSpeed: 0, speedEnabled: false };
+      options.onStatus?.({ ...status });
+    }
+    function currentMedia() {
+      const video = findVideo();
+      if (!video) return null;
+      const source = sourceOf(video);
+      if (!media || media.video !== video || media.source !== source) {
+        media = { video, source, saved: false, advanced: false, playPending: false, playBlocked: false, endedAt: null };
+      }
+      return media;
+    }
+    const lessonKey = () => {
+      const selected = doc.querySelector('.video-list .active, .catalogue .active, .chapter-list .active, [aria-current="true"]');
+      return JSON.stringify([page.location.href, sourceOf(findVideo()), selected?.getAttribute('data-id') || text(selected)]);
+    };
+    function parse() {
+      const popup = Array.from(doc.querySelectorAll('.ai-class-exercise-dialog, .videoInnerQuestion, .video-quiz-wrap, .questionPopWrap')).find(visible);
+      if (!popup) return { popup: null, questions: [], unsupported: false };
+      const modern = popup.matches('.ai-class-exercise-dialog');
+      const roots = Array.from(popup.querySelectorAll(modern ? '.ques-list > .item' : '.questionItem, .examPaper_subject, .subject-item, .quiz-item, .questionLi')).filter(visible);
+      const questions = [];
+      for (const root of roots) {
+        const stem = root.querySelector(modern ? '.question-info' : '.questionDetail, .subject_describe, .stem-content, .questionStem, .titleText');
+        const title = text(stem), typeText = text(root.querySelector('.row .type, .subject_type, .question-type'));
+        const choices = Array.from(root.querySelectorAll(modern ? ':scope > .option' : '.questionOption, .label, .option-item, .answerItem')).map(element => ({
+          element, input: element.querySelector('input'), text: text(element.querySelector(modern ? '.answer' : '.node_detail, .option-text, span.txt') || element).replace(/^[A-Za-z][.、\s]/, '')
+        }));
+        const type = /多选/.test(typeText) || choices.some(choice => choice.input?.type === 'checkbox') ? '多选题' : /判断/.test(typeText) ? '判断题' : '单选题';
+        const images = [...new Set(Array.from(root.querySelectorAll('img')).map(image => image.getAttribute('src')).filter(Boolean).map(address => { try { return new URL(address, page.location.href).href; } catch { return ''; } }).filter(Boolean))];
+        if (!title || /[\uE000-\uF8FF]/.test(title + choices.map(choice => choice.text).join('')) || choices.length < 2 || choices.length > 12 || choices.some(choice => !choice.text || choice.input?.disabled) || new Set(choices.map(choice => choice.text)).size !== choices.length) continue;
+        const key = JSON.stringify([lessonKey(), title, type, choices.map(choice => choice.text), images]);
+        questions.push({ root, popup, title, type, choices, images, key, cacheKey: images.length ? null : JSON.stringify([model, title, type, choices.map(choice => choice.text)]) });
+      }
+      return { popup, questions, unsupported: !roots.length || roots.length !== questions.length };
+    }
+    const checked = choice => choice.input ? choice.input.checked : choice.element.getAttribute('aria-checked') === 'true' || choice.element.classList.contains('isSelect') || !!choice.element.querySelector('.class-question-select.isSelect, .is-checked');
+    const selected = state => state.parsed.choices.every((choice, index) => checked(choice) === state.targets.includes(index));
+    const current = state => allowed() && options.settings().answer && active === state && !state.controller.signal.aborted && state.model === options.modelIdentity() &&
+      parse().questions.some(parsed => parsed.root === state.parsed.root && parsed.key === state.parsed.key);
+    function cancel(message) {
+      if (!active) return;
+      active.controller.abort();
+      if (active.phase === 'resolving') {
+        active.question.answerStatus = 'error'; active.question.answer = [message]; records.delete(active.parsed.key);
+      }
+      delete active.question.imageAssets;
+      active = null;
+    }
+    function answerIndices(values, parsed) {
+      const normalize = value => {
+        const token = String(value).normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+        if (parsed.type === '判断题') {
+          if (/^(正确|对|是|true|√)$/.test(token)) return 'true';
+          if (/^(错误|错|否|false|×)$/.test(token)) return 'false';
+        }
+        return token;
+      };
+      return values.map(value => {
+        const token = normalize(value);
+        const matches = parsed.choices.flatMap((choice, index) => token && normalize(choice.text) === token ? [index] : []);
+        return matches.length === 1 ? matches[0] : -1;
+      });
+    }
+    async function solve(parsed) {
+      let state = records.get(parsed.key);
+      if (state) { state.parsed = parsed; active = state; if (state.controller.signal.aborted) state.controller = new AbortController(); return state; }
+      const question = options.addQuestion({ title: escape(parsed.title), type: parsed.type, optionsText: parsed.choices.map(choice => choice.text),
+        searchText: { stem: parsed.title, options: parsed.choices.map(choice => choice.text) }, answer: [], answerStatus: 'searching', workType: 'zhs' });
+      state = { parsed, question, phase: 'resolving', targets: [], controller: new AbortController(), model, at: now() };
+      records.set(parsed.key, state); active = state;
+      while (records.size > 100) { const key = records.keys().next().value; if (records.get(key) === active) break; records.delete(key); }
+      publish('查询答案', '正在读取视频弹题');
+      try {
+        const context = { signal: state.controller.signal, isCurrent: () => current(state), skipDelay: true };
+        context.beforeRequest = candidate => options.requestPacer.beforeRequest(candidate || context);
+        if (parsed.images.length) {
+          if (!options.loadImages) throw new Error('图片题暂不能读取，请人工处理');
+          question.imageAssets = await options.loadImages(parsed.images, context);
+        }
+        const saved = parsed.cacheKey && cache.get(parsed.cacheKey);
+        const result = saved ? { success: true, data: { items: [{ answer: { values: saved } }] } } : await options.resolve(question, context);
+        if (!current(state)) return null;
+        const values = result?.success && result.data?.items?.[0]?.answer?.values;
+        if (!Array.isArray(values) || !values.length) throw new Error(result?.error?.message || '模型未返回可用答案');
+        const targets = answerIndices(values, parsed);
+        if (targets.includes(-1) || new Set(targets).size !== targets.length || parsed.type !== '多选题' && targets.length !== 1) throw new Error('答案无法唯一对应选项，请人工核对');
+        state.targets = targets;
+        for (const [index, choice] of parsed.choices.entries()) {
+          if (!current(state)) return null;
+          const expected = targets.includes(index);
+          if (checked(choice) !== expected && (parsed.type === '多选题' || expected)) { choice.element.click(); await wait(60); }
+        }
+        if (!current(state)) return null;
+        if (!selected(state)) throw new Error('选中状态核对失败，停止自动提交');
+        state.phase = 'filled'; state.at = now(); question.answer = [...values]; question.answerStatus = 'success'; question.submissionStatus = '已填选';
+        if (parsed.cacheKey) { cache.delete(parsed.cacheKey); cache.set(parsed.cacheKey, [...values]); if (cache.size > 100) cache.delete(cache.keys().next().value); }
+        publish('等待提交', '全部选项核对后按设置的间隔提交');
+      } catch (error) {
+        if (!current(state)) return null;
+        state.phase = 'blocked'; state.question.answerStatus = 'error'; state.question.answer = [String(error.message || '答题失败')];
+        publish('需要人工处理', state.question.answer[0], true); log(state.question.answer[0], 'warning');
+      } finally { delete question.imageAssets; }
+      return state;
+    }
+    const capture = kind => {
+      if (disposed) return null;
+      if (kind === 'popup') return receipt ? { receipt } : null;
+      const candidate = currentMedia();
+      return candidate ? { media: candidate, position: candidate.video.currentTime, duration: candidate.video.duration } : null;
+    };
+    const notify = event => {
+      if (disposed || !event.context) return;
+      if (event.kind === 'popup' && receipt && event.context.receipt === receipt) {
+        receipt.status = event.accepted ? 'accepted' : event.unknown ? 'unknown' : 'rejected';
+        options.sharedReceipts.record(receipt.key, receipt.status);
+        for (const state of receipt.states) state.question.submissionStatus = event.accepted ? '网站已接受提交' : '提交尚未确认或被拒绝';
+      }
+      if (event.kind === 'progress' && event.accepted && event.context.media === currentMedia() && Number.isFinite(event.context.duration) && event.context.duration > 0 && event.context.position >= event.context.duration - 0.75) {
+        media.saved = true;
+      }
+      options.onWake?.();
+    };
+    const stopReceiptObserver = (options.observeReceipts || ((callback, context) => observeWisdomStudyReceipts(page, callback, context)))(notify, capture);
+    async function processVideo() {
+      const candidate = currentMedia();
+      if (!candidate) { publish('等待视频', '请进入课程视频页面'); return; }
+      const video = candidate.video;
+      if (video.error) { publish('需要人工处理', '网站视频加载失败，请检查网络'); return; }
+      if (video.ended) {
+        candidate.endedAt ??= now();
+        if (!candidate.saved) { publish(now() - candidate.endedAt > 15000 ? '需要人工处理' : '等待网站确认', '视频已自然结束，等待网站保存学习记录'); return; }
+        if (candidate.advanced) { publish('切换视频', '已点击下一节，等待新视频加载'); return; }
+        if (!options.settings().nextCourse) { publish('播放完成', '自动下一节已关闭'); return; }
+        const next = doc.querySelector('#container .nextButton, .video-play .nextButton, .nextChapter, button.nextBtn');
+        if (!usable(next)) { publish('播放完成', '已到最后一节或下一节暂不可用，请检查目录'); return; }
+        candidate.advanced = true; next.click(); publish('切换视频', '学习记录已保存，已点击下一节'); return;
+      }
+      if (video.readyState < 1) { publish('缓冲中', '等待网站加载视频'); return; }
+      if (options.settings().play && video.paused && candidate.source && !candidate.playPending && !candidate.playBlocked) {
+        candidate.playPending = true;
+        try {
+          if (options.settings().muted) video.muted = true;
+          await Promise.resolve(video.play());
+        } catch { candidate.playBlocked = true; }
+        finally { candidate.playPending = false; }
+      }
+      if (candidate !== currentMedia() || !allowed()) return;
+      publish(candidate.playBlocked ? '需要人工处理' : video.paused ? '等待播放' : '播放中', candidate.playBlocked ? '自动播放被阻止，请手动点击一次网站播放按钮' : '使用网站原播放器；自然播放，完成后继续下一节');
+    }
+    async function tick() {
+      if (disposed || suspended) return;
+      if (!enabled()) { cancel('已暂停或其他标签页接管'); findVideo()?.pause(); publish(owned() ? '已暂停' : '另一标签页运行中', '点击恢复或在此页接管后继续'); return; }
+      if (verification()) { cancel('网站要求人工验证'); findVideo()?.pause(); publish('需要人工处理', '请手动完成网站验证码、身份或登录验证'); if (!verificationSeen) log('出现人工验证，自动操作已暂停', 'warning'); verificationSeen = true; return; }
+      verificationSeen = false;
+      const identity = options.modelIdentity();
+      if (identity !== model) { cancel('模型配置已变化'); cache.clear(); for (const [key, state] of records) if (state.phase !== 'submitted') records.delete(key); model = identity; }
+      if (active && !current(active)) cancel('题目或页面已切换');
+      if (busy) return;
+      busy = true;
+      try {
+        const batch = parse();
+        if (receipt) {
+          if (receipt.status === 'accepted' && batch.popup && !receipt.continued) {
+            const button = Array.from(batch.popup.querySelectorAll('.dialog-footer button, button')).find(node => usable(node) && /^(继续学习|继续播放|返回视频)$/.test(text(node)));
+            if (button) { receipt.continued = true; button.click(); publish('等待网站确认', '已点击继续学习，等待题框关闭'); return; }
+          }
+          if (receipt.status !== 'accepted' || batch.popup) {
+            const failed = receipt.status === 'rejected' || receipt.status === 'unknown' || now() - receipt.at > 15000;
+            publish(failed ? '需要人工处理' : '等待网站确认', receipt.status === 'accepted' ? '网站已接受，等待题框关闭' : '提交结果尚未确认；不会重复提交');
+            return;
+          }
+          receipt = null; active = null;
+        }
+        if (batch.popup) {
+          findVideo()?.pause();
+          if (batch.unsupported) { publish('需要人工处理', '题目未完整加载、题型或加密文字暂不支持'); return; }
+          if (!options.settings().answer) { publish('已暂停答题', '自动答题已关闭'); return; }
+          const states = [];
+          for (const parsed of batch.questions) {
+            if (!allowed()) return;
+            const state = await solve(parsed);
+            if (!state) return;
+            if (state.phase === 'blocked') { publish('需要人工处理', state.question.answer.join('；'), true); return; }
+            states.push(state);
+          }
+          if (!states.length || !options.settings().submit) { publish('已填选', '自动提交已关闭，请人工确认'); return; }
+          if (!states.every(state => state.phase === 'filled' && selected(state))) { publish('需要人工处理', '答案被修改或填选未完成'); return; }
+          if (states.some(state => now() - state.at < options.delay())) { publish('等待提交', '等待操作间隔'); return; }
+          const button = Array.from(batch.popup.querySelectorAll('.dialog-footer button, button, [role="button"]')).find(node => usable(node) && /^(提交作答|提交答案|提交|确定)$/.test(text(node)));
+          if (!button) { publish('需要人工处理', '未找到可用的提交作答按钮'); return; }
+          const key = JSON.stringify(['wisdom-study-popup', batch.questions.map(parsed => parsed.key)]);
+          if (options.sharedReceipts.get(key) || !options.sharedReceipts.reserve(key)) { publish('需要人工处理', '本题已有提交记录，请检查网站结果'); return; }
+          receipt = { key, states, at: now(), status: 'pending' };
+          for (const state of states) { state.phase = 'submitted'; state.question.submissionStatus = '等待网站确认'; }
+          button.click(); publish('等待网站确认', '已点击提交作答，等待网站回执'); return;
+        }
+        await processVideo();
+      } catch (error) { publish('需要人工处理', String(error.message || '流程异常')); log('当前流程停止，请检查页面状态', 'warning'); }
+      finally { busy = false; }
+    }
+    return {
+      tick, getStatus: () => ({ ...status, cacheSize: cache.size }), setVideoSpeed: () => false,
+      clearCache() { cache.clear(); publish(status.label, status.detail, status.canRetry); },
+      retryCurrent() { if (!active || active.phase !== 'blocked' || !allowed() || options.requestPacer.remaining() > 0) return false; records.delete(active.parsed.key); cache.delete(active.parsed.cacheKey); cancel('重试当前题'); return true; },
+      pause() { paused = true; options.setEnabled(false); cancel('用户暂停'); findVideo()?.pause(); publish('已暂停', '助手与视频已暂停'); },
+      resume() { paused = false; options.setEnabled(true); if (media) media.playBlocked = false; options.onWake?.(); },
+      suspend() { suspended = true; cancel('页面已挂起'); },
+      restore() { suspended = false; if (media) media.playBlocked = false; options.onWake?.(); },
+      dispose() { if (disposed) return; disposed = true; cancel('流程结束'); stopReceiptObserver(); records.clear(); cache.clear(); }
+    };
+  }
+
+  function isWisdomStudyPage() {
+    return helperPage.location.hostname === 'wisdom-mooc.zhihuishu.com' && /^\/study\/index\/?$/.test(helperPage.location.pathname);
+  }
+  let wisdomStudySession = null;
+  const useWisdomStudyLogic = () => {
+    const page = _unsafeWindow;
+    if (!isWisdomStudyPage() || page.top !== page.self || wisdomStudySession) return;
+    const config = useConfigStore(), logs = useLogStore(), questions = useQuestionStore();
+    const params = config.platformParams.wisdomStudy.parts[0].params;
+    const labels = { enabled: '启用助手', play: '视频自动播放和续播', muted: '静音播放', answer: 'AI随堂练习自动答题', submit: '核对选项后自动提交', nextCourse: '完成后自动下一视频' };
+    const preferences = () => getHelperPreferences(config.helperPreferences);
+    let panelUI = null, disposed = false, suspended = false, scheduled = false, heartbeat = null, observer;
+    let coordinator, controller;
+    const schedule = () => {
+      if (disposed || suspended || scheduled || !controller) return;
+      scheduled = true;
+      queueMicrotask(async () => {
+        scheduled = false;
+        if (disposed || suspended) return;
+        if (!isWisdomStudyPage()) { dispose(); return; }
+        await controller.tick();
+      });
+    };
+    coordinator = helperTabCoordinator = createHelperCoordinator(page, schedule);
+    const pacer = getSharedHelperPacer();
+    const networkStatus = helperNetworkStatus = (seconds, cooling) => {
+      if (coordinator.isOwner()) panelUI?.update({ ...controller.getStatus(), label: cooling ? '请求冷却' : '等待请求', detail: `请求队列等待，${seconds} 秒后继续` });
+    };
+    controller = createWisdomStudyController(page, {
+      canRun: () => coordinator.isOwner(),
+      settings: () => Object.fromEntries(Object.entries(labels).map(([key, label]) => [key, params.find(param => param.name === label)?.value === true])),
+      modelIdentity: () => JSON.stringify([config.queryApis[0], config.modelSearch, config.helperFallbackModel]),
+      setEnabled: value => { params.find(param => param.name === labels.enabled).value = value; },
+      delay: () => preferences().actionDelay * 1000,
+      requestPacer: pacer,
+      sharedReceipts: { get: key => coordinator.getReceipt(md5(key)), reserve: key => coordinator.reserve(md5(key)), record: (key, value) => coordinator.record(md5(key), value) },
+      resolve: (question, context) => queryHelperAnswer(question, context, {
+        primary: cloneLatestValue(config.queryApis[0]), fallback: getHelperFallback(config),
+        waitSeconds: config.helperFallbackModel.waitSeconds, enabled: config.helperFallbackModel.enabled,
+        resolve: getAnswer, log: (message, type) => logs.addLog(message, type)
+      }),
+      loadImages: (sources, context) => loadJcedutecImages(sources, context, /(^|\.)zhihuishu\.com$/i),
+      addQuestion: parsed => { const question = vue.reactive(parsed); questions.addQuestion(question); return question; },
+      onStatus: state => panelUI?.update(state), onWake: schedule, log: (message, type) => logs.addLog(message, type)
+    });
+    wisdomStudySession = controller;
+    const instance = vue.getCurrentInstance();
+    const mediaEvents = ['loadedmetadata', 'loadeddata', 'canplay', 'playing', 'waiting', 'ended', 'pause', 'emptied', 'error'];
+    const onMedia = event => { if (event.target?.tagName === 'VIDEO') schedule(); };
+    const relevant = 'video, source, .ai-class-exercise-dialog, .videoInnerQuestion, .video-quiz-wrap, .questionPopWrap, .yidun_popup, .yidun_panel, .geetest_panel, [class*="captcha"], .face-id-mask, .el-dialog';
+    observer = new MutationObserver(records => {
+      if (records.some(record => {
+        const node = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+        return node?.matches(relevant) || node?.closest(relevant) || [...record.addedNodes, ...record.removedNodes].some(item => item.nodeType === 1 && (item.matches(relevant) || item.querySelector(relevant)));
+      })) schedule();
+    });
+    observer.observe(page.document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'style', 'src', 'disabled', 'aria-hidden', 'aria-checked'] });
+    for (const event of mediaEvents) page.document.addEventListener(event, onMedia, true);
+    page.addEventListener('popstate', schedule);
+    page.addEventListener('hashchange', schedule);
+    const stopConfig = vue.watch(() => [config.platformParams.wisdomStudy, config.queryApis, config.modelSearch, config.helperFallbackModel, config.helperPreferences], schedule, { deep: true });
+    const start = () => { if (heartbeat === null) heartbeat = setInterval(schedule, 1000); schedule(); };
+    const onHide = event => {
+      suspended = true; clearInterval(heartbeat); heartbeat = null;
+      if (event.persisted) { coordinator.suspend(); controller.suspend(); } else dispose();
+    };
+    const onShow = event => { if (event.persisted && !disposed) { suspended = false; coordinator.restore(); controller.restore(); start(); panelUI?.clamp(); } };
+    function dispose() {
+      if (disposed) return;
+      disposed = true; clearInterval(heartbeat); heartbeat = null; observer.disconnect(); stopConfig(); controller.dispose(); coordinator.dispose(); panelUI?.dispose();
+      for (const event of mediaEvents) page.document.removeEventListener(event, onMedia, true);
+      page.removeEventListener('popstate', schedule); page.removeEventListener('hashchange', schedule);
+      page.removeEventListener('pagehide', onHide); page.removeEventListener('pageshow', onShow);
+      if (helperTabCoordinator === coordinator) helperTabCoordinator = null;
+      if (helperNetworkStatus === networkStatus) helperNetworkStatus = null;
+      wisdomStudySession = null;
+    }
+    page.addEventListener('pagehide', onHide); page.addEventListener('pageshow', onShow);
+    vue.onMounted(() => {
+      const panel = instance?.proxy?.$el?.closest('.main-page');
+      if (panel) panelUI = mountJcedutecPanel(panel, config, controller, {
+        takeover: () => coordinator.takeover(),
+        diagnostic: () => createHelperDiagnostic(config, controller.getStatus(), logs.logList, page.location)
+      });
+    });
+    vue.onBeforeUnmount(dispose);
+    logs.addLog('智慧树学习助手已启动：AI随堂练习答题、确认后续播、自然结束并保存后切课', 'success');
+    logs.addLog('遇到验证码、登录验证或未知提交结果时暂停；本版本仍需真实登录课堂验收', 'warning');
+    start();
+  };
+
   const DEFAULT_CARD_WIDTH = "310px";
   const ANSWER_CARD_WIDTH = "630px";
   const ANSWER_TAB_NAME = "1";
@@ -9072,7 +9230,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
             logStore.addLog("该页面无任务，请进入章节或答题页面使用", "error");
           }
         },
-        { keyword: "wisdom-mooc.zhihuishu.com/study/index", logic: useZhsStudyLogic },
+        { keyword: "wisdom-mooc.zhihuishu.com/study/index", logic: useWisdomStudyLogic },
         { keyword: "/stuExamWeb.html", logic: useZhsAnswerLogic },
         { keyword: "bbgu.jcedutec.cn", logic: useJcedutecLogic }
       ];
@@ -9348,6 +9506,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     setup(__props) {
       const platformMatchers = [
         { keyword: "chaoxing", platformName: "cx" },
+        { keyword: "wisdom-mooc.zhihuishu.com/study/index", platformName: "wisdomStudy" },
         { keyword: "zhihuishu", platformName: "zhs" },
         { keyword: "bbgu.jcedutec.cn", platformName: "jcedutec" }
       ];
@@ -9392,7 +9551,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
   const COMPLETE_READY_STATE = "complete";
   const ELEMENT_PLUS_STYLE_RESOURCE = "ElementPlusStyle";
   const url = _unsafeWindow.location.href;
-  if (url.includes("zhihuishu.com")) {
+  if (url.includes("zhihuishu.com") && !isWisdomStudyPage()) {
     hookWebpack();
     hookError();
   }
