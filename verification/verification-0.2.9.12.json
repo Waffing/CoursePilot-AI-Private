@@ -1,0 +1,55 @@
+{
+  "version": "0.2.9.12",
+  "checkedAt": "2026-11-13T06:28:01.023Z",
+  "rootCause": {
+    "oldSelector": ".ques-list > .item",
+    "newSelector": ".ques-list .item",
+    "evidence": "Official AiClassExerciseDialog renders a scrollbar component between ques-list and item",
+    "officialComponent": {
+      "url": "https://wisdom-mooc.zhihuishu.com/assets/index-QJOUvpDU.js",
+      "bytes": 1061290,
+      "sha256": "2eadbe0f6c66edf25c9f5c9f60afa3e7d3a8f57cb941da8bda57494a2793d59c",
+      "checkedAt": "2026-11-13T06:13:53.5256520Z"
+    }
+  },
+  "checks": {
+    "nodeTests": {
+      "passed": 30,
+      "total": 30
+    },
+    "browserSource": {
+      "passed": 37,
+      "total": 37
+    },
+    "browserDistribution": {
+      "passed": 37,
+      "total": 37
+    },
+    "syntax": true,
+    "deterministicBuild": true,
+    "metadataIdentical": true,
+    "secretPatternScan": true,
+    "fullScriptSmoke": {
+      "version": "0.2.9.12",
+      "questionCount": 1,
+      "parsedCount": 1,
+      "optionCounts": [
+        3
+      ],
+      "issues": [],
+      "state": "missing model configuration",
+      "submits": 0,
+      "runtimeErrors": [],
+      "diagnosticCopy": true
+    }
+  },
+  "limitations": [
+    "Browser model answers, media state and website receipts are simulated.",
+    "No real signed-in classroom acceptance; external Edge DOM unavailable because desktop driver is not installed.",
+    "No claims about invisibility or synthetic learning progress."
+  ],
+  "files": {
+    "course-helper.user.js": "C46D51CDB92DAF23203550E0A60602DA9EAFA3D6DF8BDEEC1B1F1A83FC0EF664",
+    "course-helper.meta.js": "F71A4A570B110A224D621EB095C4008DA2E6C97BB59C3750FDEC9CDF07051B4D"
+  }
+}

@@ -31,6 +31,14 @@ test('diagnostics hide known keys, bearer tokens, URL credentials and account id
  const result=api().createHelperDiagnostic(input,{label:'error',detail:secret},[{message:secret,time:'12:00'}],new URL('https://site.example/page?id=ACCOUNT'));
  for(const value of ['TEST_SECRET_KEY','SEARCH_TEST_SECRET','abc123','password','private','2112355352546476034','ACCOUNT'])assert(!result.includes(value));
 });
+test('study recognition diagnostics expose only bounded counts and redacted issues',()=>{
+ const input=config(), recognition={source:'visible-dom',questionCount:1,parsedCount:0,optionCounts:[0],issues:['TEST_SECRET_KEY'],title:'PRIVATE_STEM',options:['PRIVATE_OPTION'],html:'PRIVATE_HTML'};
+ const result=api().createHelperDiagnostic(input,{label:'需要人工处理',detail:'选项未读取',recognition},[],new URL('https://site.example/page?id=ACCOUNT'));
+ const state=JSON.parse(result).state;
+ assert.equal(state.recognition.questionCount,1);assert.deepEqual(state.recognition.optionCounts,[0]);
+ assert.equal(state.recognition.issues[0],'[已隐藏]');
+ for(const value of ['PRIVATE_STEM','PRIVATE_OPTION','PRIVATE_HTML','TEST_SECRET_KEY','ACCOUNT'])assert(!result.includes(value));
+});
 test('shared request state carries cooldown across independent page pacers',()=>{
  const helper=api(),saved=new Map(),storage={getItem:key=>saved.get(key),setItem:(key,value)=>saved.set(key,value)};
  const one=helper.createHelperRequestPacer({interval:()=>1000,storage}),two=helper.createHelperRequestPacer({interval:()=>1000,storage});

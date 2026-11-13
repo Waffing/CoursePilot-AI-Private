@@ -25,7 +25,7 @@ window.runWisdomStudyTests = async function () {
     video.pause = () => { media.paused = true; };
     host.querySelectorAll('.option').forEach(option => option.addEventListener('click', () => {
       if (state.ignoreSelection) return;
-      if (/单选|判断/.test(host.querySelector('.type').textContent)) host.querySelectorAll('.class-question-select').forEach(node => node.classList.remove('isSelect'));
+      if (/单选|判断/.test(host.querySelector('.type, .kind')?.textContent || '')) host.querySelectorAll('.class-question-select').forEach(node => node.classList.remove('isSelect'));
       option.querySelector('.class-question-select').classList.toggle('isSelect');
     }));
     host.querySelector('.dialog-footer button').addEventListener('click', () => { state.submits++; });
@@ -62,6 +62,132 @@ window.runWisdomStudyTests = async function () {
     catch (error) { results.push({ name, pass: false, error: error.message }); }
     finally { while (fixtures.length) { const fixture = fixtures.pop(); fixture.controller.dispose(); fixture.host.remove(); } }
   }
+  await test('hidden stale selection markers cannot verify an unselected option', async () => {
+    const h = harness(); h.state.answer = ['选项甲']; h.state.ignoreSelection = true;
+    const hidden = document.createElement('span'); hidden.hidden = true; hidden.className = 'class-question-select isSelect';
+    h.host.querySelector('.option').append(hidden); await h.solve();
+    assert(h.state.answers === 1 && h.state.submits === 0, 'hidden markers must not bypass visible selection verification');
+  });
+  await test('missing first stem without a type label cannot borrow second-question radio controls', async () => {
+    const h = harness(); const first = h.host.querySelector('.item'), second = first.cloneNode(true); first.after(second);
+    h.host.querySelector('.ques-list').className = 'exercise-body';
+    for (const card of [first, second]) { card.className = 'exercise-card'; card.querySelector('.row').remove(); }
+    first.querySelectorAll('.option').forEach(option => option.remove()); second.querySelector('.question-info').textContent = '第二题';
+    second.querySelectorAll('.option').forEach(option => { const input = document.createElement('input'); input.type = 'radio'; input.name = 'second'; option.prepend(input); });
+    await h.tick(); assert(h.state.answers === 0 && h.state.submits === 0, 'distinct stems must enforce boundaries even without type labels');
+  });
+  await test('a missing first semantic question cannot absorb the next complete question', async () => {
+    const h = harness(); const first = h.host.querySelector('.item'), second = first.cloneNode(true); first.after(second);
+    first.querySelectorAll('.option').forEach(option => option.remove()); second.querySelector('.question-info').textContent = '第二题';
+    h.host.querySelector('.ques-list').className = 'exercise-body'; for (const card of [first, second]) card.className = 'exercise-card';
+    await h.tick(); assert(h.state.answers === 0 && h.state.submits === 0, 'an incomplete first question must not absorb the complete second one');
+  });
+  await test('official AiClassExerciseDialog el-scrollbar wrappers retain question discovery', async () => {
+    const h = harness(); const item = h.host.querySelector('.item');
+    const scrollbar = document.createElement('div'); scrollbar.className = 'el-scrollbar';
+    scrollbar.innerHTML = '<div class="el-scrollbar__wrap"><div class="el-scrollbar__view"></div></div>';
+    item.before(scrollbar); scrollbar.querySelector('.el-scrollbar__view').append(item);
+    await h.solve();
+    assert(h.state.answers === 1 && h.state.submits === 1, 'official scrollbar wrapper must not hide question roots');
+    assert(h.state.status.recognition?.questionCount === 1 && h.state.status.recognition?.optionCounts[0] === 3, 'diagnostics must report discovered question/choice counts');
+  });
+  const wrap = (node, className = '') => { const parent = document.createElement('div'); parent.className = className; node.before(parent); parent.append(node); return parent; };
+  await test('nested question list, nested options and inline type match the reported five-choice layout', async () => {
+    const h = harness();
+    const item = h.host.querySelector('.item'); wrap(item, 'question-layout');
+    const group = wrap(item.querySelector('.option'), 'options');
+    group.append(...item.querySelectorAll(':scope > .option'));
+    const type = item.querySelector('.type'); item.prepend(type); item.querySelector('.row').remove();
+    const title = '夏商周时期中国古代军事思想的特点包括（ ）。';
+    const choices = ['把军事视为对内统治的特殊手段', '以“礼”和“刑”为治军的基础', '迷信色彩重', '以车战为主体的作战指导思想', '中国军事思想发展的第一个高峰期'];
+    item.querySelector('.question-info').textContent = title;
+    for (let index = 0; index < 2; index++) {
+      const option = group.firstElementChild.cloneNode(true);
+      option.addEventListener('click', () => option.querySelector('.class-question-select').classList.toggle('isSelect'));
+      group.append(option);
+    }
+    [...group.children].forEach((option, index) => { option.querySelector('.answer').textContent = choices[index]; option.querySelector('.class-question-select').textContent = String.fromCharCode(65 + index); });
+    h.state.answer = [choices[0], choices[2]]; await h.solve();
+    assert(h.state.calls[0]?.searchText.stem === title, 'must extract full visible stem from nested layout');
+    assert(h.state.calls[0]?.type === '多选题' && JSON.stringify(h.state.calls[0].optionsText) === JSON.stringify(choices), 'must read inline type and all five choices');
+    assert(h.state.submits === 1, 'must fill, verify and submit nested choices once');
+  });
+  await test('visible choice text excludes hidden duplicates and reading remains stable after selection', async () => {
+    const h = harness();
+    const duplicate = h.host.querySelector('.item').cloneNode(true); duplicate.hidden = true; h.host.querySelector('.ques-list').prepend(duplicate);
+    h.host.querySelectorAll('.item:not([hidden]) .option').forEach(option => {
+      const answer = option.querySelector('.answer'); const hidden = document.createElement('span'); hidden.hidden = true; hidden.textContent = '隐藏模板'; answer.prepend(hidden);
+    });
+    await h.solve();
+    assert(h.state.calls[0]?.optionsText[0] === '选项甲', 'must send only visible option text');
+    assert(h.state.answers === 1 && h.state.submits === 1, 'hidden templates must not block or create duplicate questions');
+  });
+  await test('display-contents question wrapper is recognized through visible descendants', async () => {
+    const h = harness(); h.host.querySelector('.item').style.display = 'contents'; await h.solve();
+    assert(h.state.answers === 1 && h.state.submits === 1, 'visible children must make a layout-less question recognizable');
+  });
+  await test('semantic title and explicit option controls work when presentation class names change', async () => {
+    const h = harness(); const item = h.host.querySelector('.item'); item.className = 'exercise-card'; h.host.querySelector('.ques-list').className = 'exercise-body';
+    item.querySelector('.type').parentElement.className = 'question-header';
+    item.querySelector('.type').className = 'kind'; item.querySelector('.question-info').className = 'prompt';
+    item.querySelectorAll('.option').forEach(option => { option.className = 'choice-row'; option.querySelector('.answer').className = 'choice-copy'; });
+    await h.solve();
+    assert(h.state.calls[0]?.type === '多选题' && h.state.calls[0]?.searchText.stem === '测试题：哪些选项符合题意？', 'must recover stem/type from semantic relationships');
+    assert(h.state.submits === 1, 'semantic fallback must preserve real selection verification');
+  });
+  await test('unknown question type is explained and never guessed as single-choice', async () => {
+    const h = harness(); h.host.querySelector('.type').textContent = '[填空题]'; await h.solve();
+    assert(h.state.answers === 0 && h.state.submits === 0, 'unsupported explicit type must not be treated as single-choice');
+    assert(/题型/.test(h.state.status.detail) && h.state.status.canRetry, 'must explain parse failure and allow re-scan');
+  });
+  await test('incomplete loading exposes counts, supports retry and automatically recovers', async () => {
+    const h = harness(); const item = h.host.querySelector('.item'), options = [...item.querySelectorAll('.option')]; options.forEach(option => option.remove());
+    await h.tick();
+    assert(h.state.answers === 0 && h.state.submits === 0, 'incomplete DOM must never query or submit');
+    assert(/选项/.test(h.state.status.detail) && h.state.status.canRetry, 'must identify missing choices');
+    assert(h.controller.retryCurrent(), 'parse errors must be retryable without a model request');
+    item.append(...options); await h.solve(); assert(h.state.answers === 1 && h.state.submits === 1, 'late options must recover without reload');
+  });
+  await test('duplicate visible options and encrypted text remain blocked with distinct reasons', async () => {
+    const h = harness(); h.host.querySelectorAll('.answer')[1].textContent = '选项甲'; await h.tick();
+    assert(h.state.answers === 0 && /重复/.test(h.state.status.detail), 'duplicate choices must be rejected explicitly');
+    h.host.querySelectorAll('.answer')[1].textContent = '选项乙'; h.host.querySelector('.question-info').textContent = '\uE001'; await h.tick();
+    assert(h.state.answers === 0 && /加密/.test(h.state.status.detail), 'private-use glyphs must not be sent as readable questions');
+  });
+  await test('semantic fallback never combines two visible question cards into one model prompt', async () => {
+    const h = harness(); h.state.settings.submit = false;
+    const first = h.host.querySelector('.item'), second = first.cloneNode(true); second.querySelector('.question-info').textContent = '第二题：哪些选项符合题意？'; first.after(second);
+    h.host.querySelector('.ques-list').className = 'exercise-body';
+    for (const card of [first, second]) card.className = 'exercise-card';
+    second.querySelectorAll('.option').forEach(option => option.addEventListener('click', () => option.querySelector('.class-question-select').classList.toggle('isSelect')));
+    await h.tick();
+    assert(h.state.calls.length === 2 && h.state.calls.every(question => question.optionsText.length === 3), 'each semantic question must retain its own choices');
+    assert(h.state.calls[0].searchText.stem !== h.state.calls[1].searchText.stem, 'must not merge separate question stems');
+  });
+  await test('question-info containing the entire question excludes type and choices from the stem', async () => {
+    const h = harness(); const item = h.host.querySelector('.item');
+    const stem = item.querySelector('.question-info'); stem.className = 'stem-copy'; item.classList.add('question-info');
+    await h.solve();
+    assert(h.state.calls[0]?.searchText.stem === '测试题：哪些选项符合题意？', 'wrapper must not leak type labels or choices into stem');
+    assert(h.state.submits === 1, 'wrapper layout must complete selection verification');
+  });
+  await test('choices without a type label or native input type never default to single-choice', async () => {
+    const h = harness(); h.host.querySelector('.row').remove(); await h.tick();
+    assert(h.state.answers === 0 && h.state.submits === 0 && /题型/.test(h.state.status.detail), 'unknown choice type must remain blocked');
+  });
+  await test('a partially loaded second semantic question prevents all model requests and submission', async () => {
+    const h = harness(); const first = h.host.querySelector('.item'), second = first.cloneNode(true);
+    second.querySelector('.question-info').textContent = '第二题'; second.querySelectorAll('.option').forEach(option => option.remove()); first.after(second);
+    h.host.querySelector('.ques-list').className = 'exercise-body'; for (const card of [first, second]) card.className = 'exercise-card';
+    await h.tick();
+    assert(h.state.answers === 0 && h.state.submits === 0, 'partial semantic batch must not answer only its first question');
+  });
+  await test('legacy study quiz with label choices remains recognized in the active controller', async () => {
+    const h = harness(); h.popup.className = 'videoInnerQuestion'; const item = h.host.querySelector('.item'); item.className = 'questionItem';
+    item.querySelector('.question-info').className = 'questionDetail';
+    item.querySelectorAll('.option').forEach(option => { option.className = 'label'; option.querySelector('.answer').className = 'node_detail'; });
+    await h.solve(); assert(h.state.submits === 1, 'legacy choice labels must still be supported');
+  });
   await test('AI multi-select without native inputs is recognized, filled and submitted once', async () => {
     const h = harness(); await h.solve();
     assert(h.state.calls[0].type === '多选题', 'must read [多选题]');

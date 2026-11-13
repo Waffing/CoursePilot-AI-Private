@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树--网课小助手【大模型版】
 // @namespace    noshuang
-// @version      0.2.9.11
+// @version      0.2.9.12
 // @downloadURL  https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js
 // @updateURL    https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.meta.js
 // @homepageURL  https://github.com/Waffing/CoursePilot-AI-Private
@@ -7392,9 +7392,16 @@
         .replace(/https?:\/\/[^\s<>"']+/g, (value) => { try { const url = new URL(value); return url.origin + url.pathname; } catch { return "[地址已隐藏]"; } })
         .replace(/\b\d{10,}\b/g, "[编号已隐藏]").slice(0, 500);
     };
+    const recognition = state.recognition && {
+      source: 'visible-dom',
+      questionCount: Math.max(0, Math.min(100, Number(state.recognition.questionCount) || 0)),
+      parsedCount: Math.max(0, Math.min(100, Number(state.recognition.parsedCount) || 0)),
+      optionCounts: (Array.isArray(state.recognition.optionCounts) ? state.recognition.optionCounts : []).slice(0, 100).map(value => Math.max(0, Math.min(100, Number(value) || 0))),
+      issues: (Array.isArray(state.recognition.issues) ? state.recognition.issues : []).slice(0, 10).map(redact)
+    };
     return JSON.stringify({
-      version: "0.2.9.11", page: location.origin + location.pathname,
-      state: {label: redact(state.label), detail: redact(state.detail)},
+      version: "0.2.9.12", page: location.origin + location.pathname,
+      state: {label: redact(state.label), detail: redact(state.detail), ...(recognition ? {recognition} : {})},
       preferences: getHelperPreferences(config.helperPreferences),
       logs: logs.slice(-20).map((item) => ({time: redact(item.time), type: item.type, message: redact(item.message)}))
     }, null, 2);
@@ -8532,7 +8539,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     body.insertBefore(mini, toolbar);
     const version = document.createElement("span");
     version.className = "helper-version";
-    version.textContent = "0.2.9.11 · Waffing";
+    version.textContent = "0.2.9.12 · Waffing";
     panel.querySelector(".title")?.append(version);
     const zoomIcons = Array.from(panel.querySelectorAll(".zoom-icon"));
     const onZoomKey = (event) => {
@@ -8598,7 +8605,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       panel.dataset.helperTheme = values.theme === "system" ? media.matches ? "dark" : "light" : values.theme;
       panel.dataset.helperDensity = values.density;
       panel.dataset.helperMinimized = String(config.isMinus === true);
-      version.textContent = config.isMinus === true ? "Waffing" : "0.2.9.11 · Waffing";
+      version.textContent = config.isMinus === true ? "Waffing" : "0.2.9.12 · Waffing";
       panel.style.setProperty("--helper-font-size", values.fontSize + "px");
       panel.style.setProperty("--helper-panel-width", (config.menuIndex === "1" ? Math.min(900, values.panelWidth * 1.8) : values.panelWidth) + "px");
       panel.style.setProperty("--helper-opacity", String(values.opacity / 100));
@@ -8878,15 +8885,30 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
   function createWisdomStudyController(page, options) {
     const doc = page.document, now = options.now || Date.now;
     const wait = options.wait || (ms => new Promise(resolve => setTimeout(resolve, ms)));
-    const visible = node => !!node?.isConnected && node.getClientRects().length > 0 && page.getComputedStyle(node).display !== 'none' && page.getComputedStyle(node).visibility !== 'hidden';
-    const text = node => (node?.textContent || '').replace(/\s+/g, ' ').trim();
+    const hidden = node => {
+      if (!node?.isConnected) return true;
+      for (let element = node; element; element = element.parentElement) {
+        const style = page.getComputedStyle(element);
+        if (element.hidden || element.getAttribute('aria-hidden') === 'true' || style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return true;
+      }
+      return false;
+    };
+    const visible = node => !hidden(node) && (node.getClientRects().length > 0 || page.getComputedStyle(node).display === 'contents' && Array.from(node.children).some(child => child.getClientRects().length > 0 && !hidden(child)));
+    const text = (node, exclude = new Set()) => {
+      const read = current => {
+        if (current.nodeType === 3) return current.nodeValue || '';
+        if (current.nodeType !== 1 || exclude.has(current) || hidden(current) || current.matches('script, style, template, noscript')) return '';
+        return Array.from(current.childNodes).map(read).join(' ');
+      };
+      return (node ? read(node) : '').replace(/[\s\u200B-\u200D\uFEFF]+/g, ' ').trim();
+    };
     const escape = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
     const log = (message, type = 'primary') => options.log?.(escape(message), type);
     const usable = node => visible(node) && !node.disabled && node.getAttribute('aria-disabled') !== 'true' && !node.classList.contains('disabled');
     const findVideo = () => Array.from(doc.querySelectorAll('#container video, .video-play video, video')).find(visible);
     const sourceOf = video => video?.currentSrc || video?.getAttribute('src') || '';
     let disposed = false, suspended = false, paused = false, busy = false, active = null, receipt = null, media = null;
-    let model = options.modelIdentity(), verificationSeen = false;
+    let model = options.modelIdentity(), verificationSeen = false, parseBlocked = false, recognition = null;
     let status = { label: '准备学习', detail: '', paused: false, canRetry: false, cacheSize: 0 };
     const records = new Map(), cache = new Map();
     const owned = () => options.canRun?.() ?? true;
@@ -8895,7 +8917,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       (node.matches('.yidun_popup, .yidun_panel, .geetest_panel, [class*="captcha"], .face-id-mask, .faceid-wrapper') || /人脸|身份验证|安全验证|滑动验证|验证码|重新登录|异常学习|诚信学习/.test(text(node))));
     const allowed = () => enabled() && !verification();
     function publish(label, detail = '', canRetry = false) {
-      status = { label, detail, canRetry, paused: !enabled(), standby: !owned(), cacheSize: cache.size,
+      status = { label, detail, canRetry, paused: !enabled(), standby: !owned(), cacheSize: cache.size, recognition,
         speedText: media ? '倍速：' + (Number(media.video.playbackRate) || 1) + '×（使用网站播放器）' : '', speedRates: [], selectedSpeed: 0, speedEnabled: false };
       options.onStatus?.({ ...status });
     }
@@ -8912,27 +8934,84 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
       const selected = doc.querySelector('.video-list .active, .catalogue .active, .chapter-list .active, [aria-current="true"]');
       return JSON.stringify([page.location.href, sourceOf(findVideo()), selected?.getAttribute('data-id') || text(selected)]);
     };
+    const choiceSelector = '.option, .questionOption, .option-item, .answerItem, .optionLi, .label';
+    const controlSelector = '.class-question-select, input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]';
+    const stemSelector = '.question-info, .questionDetail, .subject_describe, .stem-content, .questionStem, .titleText, .question-title, .question-stem';
+    const typePattern = /单项选择题|多项选择题|单选题|多选题|判断题|填空题|简答题|问答题|排序题|匹配题/;
+    const typeHeader = /^(?:\d+\s*[.、．]\s*)?[\[【（(]?\s*(?:单项选择题|多项选择题|单选题|多选题|判断题|填空题|简答题|问答题|排序题|匹配题)\s*[\]】）)]?$/;
+    function choiceElements(root) {
+      let nodes = Array.from(root.querySelectorAll(choiceSelector)).filter(visible);
+      nodes = nodes.filter(node => !nodes.some(other => other !== node && node.contains(other)));
+      if (nodes.length) return nodes;
+      const controls = Array.from(root.querySelectorAll(controlSelector)).filter(node => !hidden(node));
+      return [...new Set(controls.map(control => {
+        let element = control.matches('input') ? control.closest('label') || control.parentElement : control.parentElement;
+        while (element && element !== root && element.querySelectorAll(controlSelector).length === 1) {
+          const copy = text(element, new Set([control]));
+          if (copy && !/^[A-L][.、．:]?$/.test(copy)) return element;
+          element = element.parentElement;
+        }
+        return null;
+      }).filter(node => node && visible(node)))];
+    }
     function parse() {
       const popup = Array.from(doc.querySelectorAll('.ai-class-exercise-dialog, .videoInnerQuestion, .video-quiz-wrap, .questionPopWrap')).find(visible);
-      if (!popup) return { popup: null, questions: [], unsupported: false };
+      if (!popup) return { popup: null, questions: [], unsupported: false, diagnostic: null };
+      const semanticOrphans = [];
       const modern = popup.matches('.ai-class-exercise-dialog');
-      const roots = Array.from(popup.querySelectorAll(modern ? '.ques-list > .item' : '.questionItem, .examPaper_subject, .subject-item, .quiz-item, .questionLi')).filter(visible);
-      const questions = [];
-      for (const root of roots) {
-        const stem = root.querySelector(modern ? '.question-info' : '.questionDetail, .subject_describe, .stem-content, .questionStem, .titleText');
-        const title = text(stem), typeText = text(root.querySelector('.row .type, .subject_type, .question-type'));
-        const choices = Array.from(root.querySelectorAll(modern ? ':scope > .option' : '.questionOption, .label, .option-item, .answerItem')).map(element => ({
-          element, input: element.querySelector('input'), text: text(element.querySelector(modern ? '.answer' : '.node_detail, .option-text, span.txt') || element).replace(/^[A-Za-z][.、\s]/, '')
-        }));
-        const type = /多选/.test(typeText) || choices.some(choice => choice.input?.type === 'checkbox') ? '多选题' : /判断/.test(typeText) ? '判断题' : '单选题';
-        const images = [...new Set(Array.from(root.querySelectorAll('img')).map(image => image.getAttribute('src')).filter(Boolean).map(address => { try { return new URL(address, page.location.href).href; } catch { return ''; } }).filter(Boolean))];
-        if (!title || /[\uE000-\uF8FF]/.test(title + choices.map(choice => choice.text).join('')) || choices.length < 2 || choices.length > 12 || choices.some(choice => !choice.text || choice.input?.disabled) || new Set(choices.map(choice => choice.text)).size !== choices.length) continue;
+      let roots = Array.from(popup.querySelectorAll(modern ? '.ques-list .item, .question-item, .ques-item' : '.questionItem, .examPaper_subject, .subject-item, .quiz-item, .questionLi')).filter(visible);
+      const headers = Array.from(popup.querySelectorAll('.type, .subject_type, .question-type, span, div, p, strong, b')).filter(node => visible(node) && typeHeader.test(text(node)) && !Array.from(node.children).some(child => typeHeader.test(text(child))));
+      const stemNodes = Array.from(popup.querySelectorAll(stemSelector)).filter(node => visible(node) && !node.closest(choiceSelector));
+      const stems = stemNodes.filter(node => !stemNodes.some(other => other !== node && node.contains(other)));
+      // Recover question boundaries from explicit type labels and actual choice controls,
+      // not from a fixed number of wrapping divs or the whole popup's text.
+      for (const anchor of [...headers, ...stems]) {
+        if (roots.some(root => root.contains(anchor))) continue;
+        for (let candidate = anchor.parentElement; candidate && candidate !== popup; candidate = candidate.parentElement) {
+          if (headers.filter(header => candidate.contains(header)).length > 1 || stems.filter(stem => candidate.contains(stem)).length > 1) break;
+          if (choiceElements(candidate).length < 2) continue;
+          if (!roots.some(root => root.contains(candidate) || candidate.contains(root))) roots.push(candidate);
+          break;
+        }
+      }
+      roots = roots.filter(root => !roots.some(other => other !== root && root.contains(other)));
+      roots.sort((a, b) => a.compareDocumentPosition(b) & 4 ? -1 : 1);
+      for (const anchor of [...headers, ...stems]) if (!roots.some(root => root === anchor || root.contains(anchor))) semanticOrphans.push(anchor);
+      const questions = [], issues = [], counts = [];
+      for (const [index, root] of roots.entries()) {
+        const elements = choiceElements(root);
+        const localHeaders = headers.filter(node => root.contains(node));
+        const typeNode = Array.from(root.querySelectorAll('.type, .subject_type, .question-type')).find(visible);
+        const typeText = text(typeNode) || localHeaders.map(node => text(node)).join(' ');
+        const exclusion = new Set([...elements, ...localHeaders, ...root.querySelectorAll('button, .dialog-footer')]);
+        if (typeNode) exclusion.add(typeNode);
+        const stem = (root.matches(stemSelector) ? [root] : []).concat(Array.from(root.querySelectorAll(stemSelector))).find(node => visible(node) && !elements.some(element => element.contains(node)));
+        const title = text(stem || root, exclusion).replace(/^\d+\s*[.、．]\s*(?=[\[【（(])/, '').replace(/^[\[【（(]\s*(?:单项选择题|多项选择题|单选题|多选题|判断题)\s*[\]】）)]\s*/, '').trim();
+        const choices = elements.map(element => {
+          const copy = Array.from(element.querySelectorAll('.answer, .node_detail, .option-text, span.txt')).find(visible);
+          const markers = new Set(element.querySelectorAll('.class-question-select, .option-label, .option-index, input, [aria-hidden="true"]'));
+          return { element, input: element.matches('input') ? element : element.querySelector('input[type="radio"], input[type="checkbox"]'),
+            text: text(copy || element, markers).replace(/^[A-L]\s*[.、．:：]\s*/, '').replace(/^[A-L]\s+(?=\S)/, '') };
+        });
+        const explicit = typeText.match(typePattern)?.[0];
+        const type = /多选|多项选择/.test(explicit || '') ? '多选题' : /单选|单项选择/.test(explicit || '') ? '单选题' : explicit === '判断题' ? '判断题' :
+          explicit ? null : choices.some(choice => choice.input?.type === 'checkbox') ? '多选题' : choices.length && choices.every(choice => choice.input?.type === 'radio') ? '单选题' : null;
+        const images = [...new Set(Array.from(root.querySelectorAll('img')).filter(image => !hidden(image)).map(image => image.getAttribute('src')).filter(Boolean).map(address => { try { return new URL(address, page.location.href).href; } catch { return ''; } }).filter(Boolean))];
+        let issue = !title ? '未读取到可见题干' : !type ? '题型未识别或暂不支持' : /[\uE000-\uF8FF]/.test(title + choices.map(choice => choice.text).join('')) ? '检测到加密文字，需人工处理' :
+          choices.length < 2 || choices.length > 12 ? `选项数量为 ${choices.length}，等待完整加载或结构不兼容` : choices.some(choice => !choice.text) ? '存在未读取到文字的选项' :
+          choices.some(choice => choice.input?.disabled || choice.element.getAttribute('aria-disabled') === 'true' || choice.element.classList.contains('disabled')) ? '选项暂不可用' :
+          new Set(choices.map(choice => choice.text.normalize('NFKC').replace(/\s+/g, ''))).size !== choices.length ? '可见选项文字重复，无法唯一匹配' : '';
+        counts.push(choices.length);
+        if (issue) { issues.push(`第 ${index + 1} 题：${issue}`); continue; }
         const key = JSON.stringify([lessonKey(), title, type, choices.map(choice => choice.text), images]);
         questions.push({ root, popup, title, type, choices, images, key, cacheKey: images.length ? null : JSON.stringify([model, title, type, choices.map(choice => choice.text)]) });
       }
-      return { popup, questions, unsupported: !roots.length || roots.length !== questions.length };
+      if (!roots.length) issues.push('未定位到可见题目容器（等待题型、题干和选项加载）');
+      const diagnostic = { source: 'visible-dom', questionCount: roots.length, parsedCount: questions.length, optionCounts: counts, issues };
+      if (semanticOrphans.length) issues.push('存在尚未读取到独立题干和选项的题目');
+      return { popup, questions, unsupported: issues.length > 0, diagnostic };
     }
-    const checked = choice => choice.input ? choice.input.checked : choice.element.getAttribute('aria-checked') === 'true' || choice.element.classList.contains('isSelect') || !!choice.element.querySelector('.class-question-select.isSelect, .is-checked');
+    const checked = choice => choice.input ? choice.input.checked : choice.element.getAttribute('aria-checked') === 'true' || choice.element.classList.contains('isSelect') || Array.from(choice.element.querySelectorAll('.class-question-select.isSelect, .is-checked, [aria-checked="true"]')).some(visible);
     const selected = state => state.parsed.choices.every((choice, index) => checked(choice) === state.targets.includes(index));
     const current = state => allowed() && options.settings().answer && active === state && !state.controller.signal.aborted && state.model === options.modelIdentity() &&
       parse().questions.some(parsed => parsed.root === state.parsed.root && parsed.key === state.parsed.key);
@@ -9072,7 +9151,9 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
         }
         if (batch.popup) {
           findVideo()?.pause();
-          if (batch.unsupported) { publish('需要人工处理', '题目未完整加载、题型或加密文字暂不支持'); return; }
+          recognition = batch.diagnostic;
+          parseBlocked = batch.unsupported;
+          if (batch.unsupported) { publish('需要人工处理', `识别到 ${batch.diagnostic.questionCount} 题、成功 ${batch.questions.length} 题；${batch.diagnostic.issues.join('；')}`, true); return; }
           if (!options.settings().answer) { publish('已暂停答题', '自动答题已关闭'); return; }
           const states = [];
           for (const parsed of batch.questions) {
@@ -9093,6 +9174,7 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
           for (const state of states) { state.phase = 'submitted'; state.question.submissionStatus = '等待网站确认'; }
           button.click(); publish('等待网站确认', '已点击提交作答，等待网站回执'); return;
         }
+        parseBlocked = false; recognition = null;
         await processVideo();
       } catch (error) { publish('需要人工处理', String(error.message || '流程异常')); log('当前流程停止，请检查页面状态', 'warning'); }
       finally { busy = false; }
@@ -9100,7 +9182,12 @@ const HELPER_PANEL_STYLE = ".main-page[data-helper-ui]{--helper-bg:#ffffff;--hel
     return {
       tick, getStatus: () => ({ ...status, cacheSize: cache.size }), setVideoSpeed: () => false,
       clearCache() { cache.clear(); publish(status.label, status.detail, status.canRetry); },
-      retryCurrent() { if (!active || active.phase !== 'blocked' || !allowed() || options.requestPacer.remaining() > 0) return false; records.delete(active.parsed.key); cache.delete(active.parsed.cacheKey); cancel('重试当前题'); return true; },
+      retryCurrent() {
+        if (!allowed() || receipt) return false;
+        if (parseBlocked) { parseBlocked = false; options.onWake?.(); return true; }
+        if (!active || active.phase !== 'blocked' || options.requestPacer.remaining() > 0) return false;
+        records.delete(active.parsed.key); cache.delete(active.parsed.cacheKey); cancel('重试当前题'); options.onWake?.(); return true;
+      },
       pause() { paused = true; options.setEnabled(false); cancel('用户暂停'); findVideo()?.pause(); publish('已暂停', '助手与视频已暂停'); },
       resume() { paused = false; options.setEnabled(true); if (media) media.playBlocked = false; options.onWake?.(); },
       suspend() { suspended = true; cancel('页面已挂起'); },

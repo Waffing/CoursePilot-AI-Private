@@ -101,9 +101,16 @@
         .replace(/https?:\/\/[^\s<>"']+/g, (value) => { try { const url = new URL(value); return url.origin + url.pathname; } catch { return "[地址已隐藏]"; } })
         .replace(/\b\d{10,}\b/g, "[编号已隐藏]").slice(0, 500);
     };
+    const recognition = state.recognition && {
+      source: 'visible-dom',
+      questionCount: Math.max(0, Math.min(100, Number(state.recognition.questionCount) || 0)),
+      parsedCount: Math.max(0, Math.min(100, Number(state.recognition.parsedCount) || 0)),
+      optionCounts: (Array.isArray(state.recognition.optionCounts) ? state.recognition.optionCounts : []).slice(0, 100).map(value => Math.max(0, Math.min(100, Number(value) || 0))),
+      issues: (Array.isArray(state.recognition.issues) ? state.recognition.issues : []).slice(0, 10).map(redact)
+    };
     return JSON.stringify({
-      version: "0.2.9.11", page: location.origin + location.pathname,
-      state: {label: redact(state.label), detail: redact(state.detail)},
+      version: "0.2.9.12", page: location.origin + location.pathname,
+      state: {label: redact(state.label), detail: redact(state.detail), ...(recognition ? {recognition} : {})},
       preferences: getHelperPreferences(config.helperPreferences),
       logs: logs.slice(-20).map((item) => ({time: redact(item.time), type: item.type, message: redact(item.message)}))
     }, null, 2);
