@@ -7,7 +7,7 @@
     if (!isWisdomStudyPage() || page.top !== page.self || wisdomStudySession) return;
     const config = useConfigStore(), logs = useLogStore(), questions = useQuestionStore();
     const params = config.platformParams.wisdomStudy.parts[0].params;
-    const labels = { enabled: '启用助手', play: '视频自动播放和续播', muted: '静音播放', answer: 'AI随堂练习自动答题', submit: '核对选项后自动提交', nextCourse: '完成后提醒手动切课' };
+    const labels = { enabled: '启用助手', play: '视频自动播放和续播', muted: '静音播放', answer: 'AI随堂练习自动答题', submit: '核对选项后自动提交', nextCourse: '保存后自动下一视频' };
     const preferences = () => getHelperPreferences(config.helperPreferences);
     let panelUI = null, disposed = false, suspended = false, scheduled = false, heartbeat = null, observer;
     let coordinator, controller;
@@ -84,8 +84,8 @@
       });
     });
     vue.onBeforeUnmount(dispose);
-    logs.addLog('智慧树学习助手已启动：AI随堂练习答题、确认后续播、保存后提醒手动切课', 'success');
-    logs.addLog('网站要求真实点击切课，请手动点击网站下一节；新视频加载后自动续播', 'warning');
+    logs.addLog('智慧树学习助手 0.2.9.14 已启动：AI随堂练习答题、确认后续播、保存后自动切课', 'success');
+    logs.addLog('普通 Edge／Chrome 中使用网站原生下一节入口，无需 OCS；未确认换源时停止重试，请检查网站提示', 'warning');
     logs.addLog('遇到验证码、登录验证或未知提交结果时暂停；本版本仍需真实登录课堂验收', 'warning');
     start();
   };

@@ -55,7 +55,7 @@ window.runWisdomStudyTests = async function () {
     const tick = async () => { await controller.tick(); await flush(); };
     const solve = async () => { await tick(); state.now += 1200; await tick(); };
     fixtures.push({ host, controller });
-    return { host, state, media, popup, video, controller, tick, solve, receipt, capture };
+    return { host, state, media, popup, video, page, options, receipts, controller, tick, solve, receipt, capture };
   }
   async function test(name, action) {
     try { await action(); results.push({ name, pass: true }); }
@@ -313,6 +313,92 @@ window.runWisdomStudyTests = async function () {
   });
   await test('disposing controller detaches passive acknowledgement observers', async () => {
     const h = harness(); h.controller.dispose(); await h.tick(); assert(h.state.observerDisposed && h.state.answers === 0, 'disposed controller must stop');
+  });
+  function nativePlayer(h, action) {
+    const callback = { playerNext() { h.state.nativeNext = (h.state.nativeNext || 0) + 1; action?.(); } };
+    const instance = { id: 'container', options: { id: 101, control: { nextBtn: true } }, player: { el: () => h.host.querySelector('#container') }, callback };
+    h.page.PlayerStarter = { get: () => instance };
+    return instance;
+  }
+  async function finish(h) { h.popup.remove(); h.media.ended = true; h.media.currentTime = 20; await h.tick(); h.receipt('progress'); h.state.now += 1000; }
+  await test('native next waits for successful final save and never clicks the player', async () => {
+    const h = harness(); nativePlayer(h); h.popup.remove(); h.media.ended = true; h.media.currentTime = 20;
+    let rejected = 0; h.host.querySelector('#container').addEventListener('click', event => { if (!event.isTrusted) rejected++; }, true);
+    await h.tick(); assert(!h.state.nativeNext, 'save must precede native next');
+    h.receipt('progress'); await h.tick(); assert(!h.state.nativeNext && h.state.status.label === '等待切课', 'native next must allow website save cleanup and action delay');
+    h.state.now += 1000; await Promise.all([h.tick(), h.tick()]); await h.tick();
+    assert(h.state.nativeNext === 1 && h.state.next === 0 && rejected === 0, 'must invoke native callback once without synthetic clicks');
+    assert(h.state.status.label === '等待切课', 'callback return alone does not confirm source change');
+  });
+  await test('native callback source change resumes the new lesson with a fresh save requirement', async () => {
+    const h = harness(); const player = nativePlayer(h, () => { player.options.id++; h.video.src = 'https://example.invalid/native-next.mp4'; h.media.ended = false; h.media.currentTime = 0; h.media.paused = true; });
+    await finish(h); await h.tick(); await h.tick();
+    assert(h.state.nativeNext === 1 && h.state.plays === 1, 'new source must resume');
+    h.media.ended = true; h.media.currentTime = 20; await h.tick();
+    assert(h.state.nativeNext === 1 && h.state.status.label === '等待网站确认', 'new source requires its own final save');
+    h.receipt('progress'); h.state.now += 1000; await h.tick(); assert(h.state.nativeNext === 2, 'next lesson may navigate after its own save');
+  });
+  await test('native next timeout never retries an unknown result or claims the course is complete', async () => {
+    const h = harness(); nativePlayer(h); await finish(h); await h.tick(); h.state.now += 16000; await h.tick(); await h.tick();
+    assert(h.state.nativeNext === 1 && h.state.status.label === '需要人工处理' && !h.state.status.canRetry, 'unknown result must stop after one call');
+    assert(!h.controller.retryCurrent(), 'unknown navigation must not be resent by retry');
+  });
+  await test('native callback exception is not resent', async () => {
+    const h = harness(); nativePlayer(h, () => { throw new Error('website blocked'); }); await finish(h); await h.tick(); await h.tick();
+    assert(h.state.nativeNext === 1 && h.state.status.label === '需要人工处理' && !h.state.status.canRetry, 'exception after invocation has unknown result');
+  });
+  await test('missing native entry allows explicit recheck only before any call was sent', async () => {
+    const h = harness(); await finish(h); await h.tick();
+    assert(h.state.status.canRetry && h.state.status.retryLabel === '重试切课', 'missing entry must expose a navigation-specific retry');
+    nativePlayer(h); assert(h.controller.retryCurrent(), 'preflight failure may be retried explicitly'); await h.tick();
+    assert(h.state.nativeNext === 1, 'explicit retry must recheck current native entry');
+  });
+  await test('pause and ownership loss prevent native next after save', async () => {
+    const h = harness(); nativePlayer(h); await finish(h); h.controller.pause(); await h.tick();
+    assert(!h.state.nativeNext, 'paused controller must not navigate');
+    h.controller.resume(); h.state.standby = true; await h.tick(); assert(!h.state.nativeNext, 'standby must not navigate');
+    h.state.standby = false; await h.tick(); assert(h.state.nativeNext === 1, 'owner may navigate once after resuming');
+  });
+  await test('human verification blocks native next even after final save', async () => {
+    const h = harness(); nativePlayer(h); await finish(h); const node = document.createElement('div'); node.className = 'yidun_popup'; h.host.append(node); await h.tick();
+    assert(!h.state.nativeNext && h.state.status.label === '需要人工处理', 'verification must remain a user action');
+  });
+  await test('disabled automatic next does not invoke an available native callback', async () => {
+    const h = harness(); nativePlayer(h); h.state.settings.nextCourse = false; await finish(h); await h.tick();
+    assert(!h.state.nativeNext && h.state.status.label === '播放完成', 'automatic next off must be honored');
+  });
+  await test('saved navigation marker stops a second tab from invoking the same lesson', async () => {
+    const first = harness(); nativePlayer(first); await finish(first); await first.tick();
+    assert(first.state.nativeNext === 1, 'first tab must navigate once');
+    const second = harness({ sharedReceipts: first.options.sharedReceipts }); nativePlayer(second); await finish(second); await second.tick();
+    assert(!second.state.nativeNext && second.state.status.label === '需要人工处理', 'existing transition must stop a second tab');
+  });
+  await test('native entry validates its player media before calling', async () => {
+    const h = harness(); const instance = nativePlayer(h); instance.player.el = () => document.createElement('div'); await finish(h); await h.tick();
+    assert(!h.state.nativeNext && h.state.status.canRetry, 'mismatched player must be blocked before sending');
+  });
+  await test('suspended or disposed controller never starts native next', async () => {
+    const h = harness(); nativePlayer(h); await finish(h); h.controller.suspend(); await h.tick(); assert(!h.state.nativeNext, 'suspend must stop next');
+    h.controller.restore(); h.controller.dispose(); await h.tick(); assert(!h.state.nativeNext, 'dispose must stop next');
+  });
+  await test('rejected native callback promise is handled without repeat navigation', async () => {
+    const h = harness(); const player = nativePlayer(h); player.callback.playerNext = () => { h.state.nativeNext = (h.state.nativeNext || 0) + 1; return Promise.reject(new Error('website rejected')); };
+    await finish(h); await h.tick(); await h.tick();
+    assert(h.state.nativeNext === 1 && h.state.status.label === '需要人工处理' && !h.state.status.canRetry, 'async failure must remain stopped');
+  });
+  await test('late old navigation rejection cannot mark a new source as saved or resend it', async () => {
+    const h = harness(); const player = nativePlayer(h); let reject;
+    player.callback.playerNext = () => { h.state.nativeNext = (h.state.nativeNext || 0) + 1; return new Promise((resolve, fail) => { reject = fail; }); };
+    await finish(h); await h.tick();
+    h.video.src = 'https://example.invalid/new-after-request.mp4'; player.options.id = 102; h.media.ended = false; h.media.currentTime = 0; h.media.paused = true; await h.tick();
+    reject(new Error('old request')); await flush(); await h.tick();
+    assert(h.state.nativeNext === 1 && h.state.status.label === '播放中', 'old failure must not block or resend the new source');
+    h.media.ended = true; h.media.currentTime = 20; await h.tick(); assert(h.state.status.label === '等待网站确认', 'new lesson must still need its own save');
+  });
+  await test('ownership loss while reserving prevents invoking the native callback', async () => {
+    const h = harness(); nativePlayer(h); const reserve = h.options.sharedReceipts.reserve;
+    h.options.sharedReceipts.reserve = key => { const result = reserve(key); h.state.standby = true; return result; };
+    await finish(h); await h.tick(); assert(!h.state.nativeNext, 'execution ownership must be checked again before invocation');
   });
   const summary = { total: results.length, passed: results.filter(r => r.pass).length, failed: results.filter(r => !r.pass).length, results };
   document.querySelector('#results').textContent = JSON.stringify(summary, null, 2);

@@ -63,8 +63,40 @@
     };
   }
 
+  // Use the callback retained by the website player. Do not synthesize a click or alter its guards.
+  function createWisdomStudyNavigation(page) {
+    const read = (video, source) => {
+      if (page.location.hostname !== 'wisdom-mooc.zhihuishu.com' || !/^\/study\/index\/?$/.test(page.location.pathname)) throw new Error('学习页面已变化');
+      const containers = Array.from(page.document.querySelectorAll('#container'));
+      if (containers.length !== 1 || !video?.isConnected || !source || (video.currentSrc || video.getAttribute('src') || '') !== source || !containers[0].contains(video)) throw new Error('无法唯一确认当前视频');
+      const instance = page.PlayerStarter?.get?.('container');
+      const root = instance?.player?.el?.();
+      const id = instance?.options?.id;
+      if (instance?.id !== 'container' || !root?.isConnected || !root.contains(video) || instance.options?.control?.nextBtn !== true || !['string', 'number'].includes(typeof id) || !String(id).trim() || String(id).length > 128 || typeof instance.callback?.playerNext !== 'function') throw new Error('网站下一节入口尚不可用');
+      return { instance, root, callback: instance.callback, next: instance.callback.playerNext, id: String(id) };
+    };
+    return {
+      prepare(video, source) {
+        const plan = read(video, source);
+        const href = page.location.href;
+        let invoked = false;
+        return {
+          key: JSON.stringify(['wisdom-study-next', href, plan.id]),
+          invoke(isCurrent) {
+            if (invoked || !isCurrent()) throw new Error('切课操作已失效');
+            const current = read(video, source);
+            if (page.location.href !== href || current.instance !== plan.instance || current.root !== plan.root || current.callback !== plan.callback || current.next !== plan.next || current.id !== plan.id) throw new Error('网站播放器已变化');
+            invoked = true;
+            return plan.next.call(plan.callback);
+          }
+        };
+      }
+    };
+  }
+
   function createWisdomStudyController(page, options) {
     const doc = page.document, now = options.now || Date.now;
+    const navigation = createWisdomStudyNavigation(page);
     const wait = options.wait || (ms => new Promise(resolve => setTimeout(resolve, ms)));
     const hidden = node => {
       if (!node?.isConnected) return true;
@@ -98,7 +130,7 @@
       (node.matches('.yidun_popup, .yidun_panel, .geetest_panel, [class*="captcha"], .face-id-mask, .faceid-wrapper') || /人脸|身份验证|安全验证|滑动验证|验证码|重新登录|异常学习|诚信学习/.test(text(node))));
     const allowed = () => enabled() && !verification();
     function publish(label, detail = '', canRetry = false) {
-      status = { label, detail, canRetry, paused: !enabled(), standby: !owned(), cacheSize: cache.size, recognition,
+      status = { label, detail, canRetry, retryLabel: canRetry && media?.navigation?.phase === 'blocked' ? '重试切课' : '', paused: !enabled(), standby: !owned(), cacheSize: cache.size, recognition,
         speedText: media ? '倍速：' + (Number(media.video.playbackRate) || 1) + '×（使用网站播放器）' : '', speedRates: [], selectedSpeed: 0, speedEnabled: false };
       options.onStatus?.({ ...status });
     }
@@ -107,7 +139,7 @@
       if (!video) return null;
       const source = sourceOf(video);
       if (!media || media.video !== video || media.source !== source) {
-        media = { video, source, saved: false, playPending: false, playBlocked: false, endedAt: null };
+        media = { video, source, saved: false, playPending: false, playBlocked: false, endedAt: null, navigation: null };
       }
       return media;
     }
@@ -276,6 +308,7 @@
       }
       if (event.kind === 'progress' && event.accepted && event.context.media === currentMedia() && Number.isFinite(event.context.duration) && event.context.duration > 0 && event.context.position >= event.context.duration - 0.75) {
         media.saved = true;
+        media.savedAt ??= now();
       }
       options.onWake?.();
     };
@@ -288,11 +321,35 @@
       if (video.ended) {
         candidate.endedAt ??= now();
         if (!candidate.saved) { publish(now() - candidate.endedAt > 15000 ? '需要人工处理' : '等待网站确认', '视频已自然结束，等待网站保存学习记录'); return; }
-        // The website rejects synthetic clicks in its player and redirects home.
-        // Let the user operate the native next control; source changes still resume normally.
-        publish(options.settings().nextCourse ? '等待手动切课' : '播放完成', options.settings().nextCourse
-          ? '学习记录已保存，请手动点击网站“下一节”或课程目录；新视频加载后自动续播'
-          : '学习记录已保存；切课提醒已关闭，需要时请手动选择下一视频'); return;
+        if (!options.settings().nextCourse) { publish('播放完成', '学习记录已保存；自动切课已关闭，需要时请手动选择下一视频'); return; }
+        let next = candidate.navigation;
+        if (next?.phase === 'blocked') { publish('等待手动切课', '网站下一节入口不可用或视频未匹配；可重试切课，或手动点击网站下一节', true); return; }
+        if (next) {
+          const unknown = next.phase === 'unknown' || now() - next.at > 15000;
+          publish(unknown ? '需要人工处理' : '等待切课', unknown
+            ? '已请求网站切课但未确认新视频；可能已到末节或网站有提示，请手动检查，不会重复请求'
+            : '已调用网站下一节入口，等待网站保存、检查章节限制并加载新视频'); return;
+        }
+        let plan;
+        try { plan = navigation.prepare(video, candidate.source); }
+        catch { candidate.navigation = { phase: 'blocked' }; publish('等待手动切课', '网站下一节入口不可用或视频未匹配；可重试切课，或手动点击网站下一节', true); return; }
+        if (now() - candidate.savedAt < Math.max(1000, Number(options.delay()) || 0)) { publish('等待切课', '学习记录已保存，等待操作间隔后调用网站下一节入口'); return; }
+        if (!allowed() || candidate !== currentMedia() || !options.settings().nextCourse) return;
+        if (options.sharedReceipts.get(plan.key) || !options.sharedReceipts.reserve(plan.key)) {
+          candidate.navigation = { phase: 'unknown', at: now() };
+          publish('需要人工处理', '本视频已有切课记录或当前页无法取得执行权，请手动检查网站结果'); return;
+        }
+        next = candidate.navigation = { phase: 'sent', at: now() };
+        const failed = () => { next.phase = 'unknown'; options.sharedReceipts.record(plan.key, 'unknown'); options.onWake?.(); };
+        try {
+          const result = plan.invoke(() => allowed() && options.settings().nextCourse && candidate === currentMedia() && video.ended && candidate.saved);
+          options.sharedReceipts.record(plan.key, 'sent');
+          if (result?.then) Promise.resolve(result).catch(failed);
+        } catch { failed(); }
+        if (candidate === currentMedia()) publish(next.phase === 'unknown' ? '需要人工处理' : '等待切课', next.phase === 'unknown'
+          ? '网站切课调用结果未知，请手动检查；不会重复请求'
+          : '已调用网站下一节入口，等待网站保存、检查章节限制并加载新视频');
+        options.onWake?.(); return;
       }
       if (video.readyState < 1) { publish('缓冲中', '等待网站加载视频'); return; }
       if (options.settings().play && video.paused && candidate.source && !candidate.playPending && !candidate.playBlocked) {
@@ -304,7 +361,7 @@
         finally { candidate.playPending = false; }
       }
       if (candidate !== currentMedia() || !allowed()) return;
-      publish(candidate.playBlocked ? '需要人工处理' : video.paused ? '等待播放' : '播放中', candidate.playBlocked ? '自动播放被阻止，请手动点击一次网站播放按钮' : '使用网站原播放器；自然播放，切课由用户操作');
+      publish(candidate.playBlocked ? '需要人工处理' : video.paused ? '等待播放' : '播放中', candidate.playBlocked ? '自动播放被阻止，请手动点击一次网站播放按钮' : '使用网站原播放器；自然结束并保存后按设置切课');
     }
     async function tick() {
       if (disposed || suspended) return;
@@ -365,6 +422,8 @@
       clearCache() { cache.clear(); publish(status.label, status.detail, status.canRetry); },
       retryCurrent() {
         if (!allowed() || receipt) return false;
+        const candidate = currentMedia();
+        if (candidate?.navigation?.phase === 'blocked' && candidate.saved && candidate.video.ended) { candidate.navigation = null; options.onWake?.(); return true; }
         if (parseBlocked) { parseBlocked = false; options.onWake?.(); return true; }
         if (!active || active.phase !== 'blocked' || options.requestPacer.remaining() > 0) return false;
         records.delete(active.parsed.key); cache.delete(active.parsed.cacheKey); cancel('重试当前题'); options.onWake?.(); return true;

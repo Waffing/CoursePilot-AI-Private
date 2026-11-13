@@ -214,7 +214,7 @@
     body.insertBefore(mini, toolbar);
     const version = document.createElement("span");
     version.className = "helper-version";
-    version.textContent = "0.2.9.13 · Waffing";
+    version.textContent = "0.2.9.14 · Waffing";
     panel.querySelector(".title")?.append(version);
     const zoomIcons = Array.from(panel.querySelectorAll(".zoom-icon"));
     const onZoomKey = (event) => {
@@ -258,6 +258,7 @@
       toggle.textContent = state.paused ? "恢复" : "暂停";
       toggle.setAttribute("aria-label", state.paused ? "恢复助手" : "暂停助手和视频");
       retry.disabled = !state.canRetry || state.paused;
+      retry.textContent = state.retryLabel || "重试当前题";
       clear.disabled = state.cacheSize === 0;
       clear.textContent = `清空缓存（${state.cacheSize}）`;
     }
@@ -280,7 +281,7 @@
       panel.dataset.helperTheme = values.theme === "system" ? media.matches ? "dark" : "light" : values.theme;
       panel.dataset.helperDensity = values.density;
       panel.dataset.helperMinimized = String(config.isMinus === true);
-      version.textContent = config.isMinus === true ? "Waffing" : "0.2.9.13 · Waffing";
+      version.textContent = config.isMinus === true ? "Waffing" : "0.2.9.14 · Waffing";
       panel.style.setProperty("--helper-font-size", values.fontSize + "px");
       panel.style.setProperty("--helper-panel-width", (config.menuIndex === "1" ? Math.min(900, values.panelWidth * 1.8) : values.panelWidth) + "px");
       panel.style.setProperty("--helper-opacity", String(values.opacity / 100));

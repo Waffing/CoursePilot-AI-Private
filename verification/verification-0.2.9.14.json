@@ -1,0 +1,179 @@
+{
+  "version": "0.2.9.14",
+  "checkedAt": "2026-11-13T09:46:21.222Z",
+  "baseCommit": "518b43f649dd20f93ea0b83fea368de902b72fc8",
+  "behavior": "Ordinary Edge/Chrome userscript: after natural media end and successful website final-save receipt, wait for action delay and invoke the existing playerNext callback once. Resume on source change; stop on unknown results. No OCS desktop or local service dependency.",
+  "navigation": {
+    "callback": "PlayerStarter.get(\"container\").callback.playerNext",
+    "syntheticClicks": false,
+    "minimumPostSaveDelayMs": 1000,
+    "sourceChangeTimeoutMs": 15000,
+    "oldSettingsAndModelsPreserved": true,
+    "restrictions": "Existing website callbacks remain unmodified; CAPTCHA, login and chapter restrictions remain website-handled."
+  },
+  "checks": {
+    "nodeTests": {
+      "passed": 51,
+      "total": 51,
+      "failed": 0
+    },
+    "browserSource": {
+      "passed": 54,
+      "total": 54,
+      "failed": 0
+    },
+    "browserDistribution": {
+      "passed": 54,
+      "total": 54,
+      "failed": 0
+    },
+    "browserEvidence": "Executed browser tool results earlier in this same task, against this unchanged distribution SHA-256. Source and distribution run the same 54 scenarios; counts are not additive coverage.",
+    "officialFunctions": {
+      "total": 9,
+      "passed": 9,
+      "assets": [
+        {
+          "name": "study",
+          "url": "https://wisdom-mooc.zhihuishu.com/assets/index-QJOUvpDU.js",
+          "sha256": "2eadbe0f6c66edf25c9f5c9f60afa3e7d3a8f57cb941da8bda57494a2793d59c"
+        },
+        {
+          "name": "player",
+          "url": "https://lc.zhihuishu.com/ableVideoPlayerAiv2/js/videoPlayer.min.js?v=20250526",
+          "sha256": "c28dd9cccc6966964c5f1b0844757bda85b8cef39210624a8f17c36e4c24ab6c"
+        }
+      ],
+      "evidence": "Original official Ls/gn/qt in isolated VM; network and state mocked; no login classroom execution",
+      "results": [
+        {
+          "name": "official next waits for its own save before selecting the next lesson",
+          "pass": true
+        },
+        {
+          "name": "save rejection retains current lesson",
+          "pass": true
+        },
+        {
+          "name": "captcha remains handled by website verification",
+          "pass": true
+        },
+        {
+          "name": "authentication rejection is retained",
+          "pass": true
+        },
+        {
+          "name": "cross-chapter restriction prevents progression",
+          "pass": true
+        },
+        {
+          "name": "study-window restriction prevents progression",
+          "pass": true
+        },
+        {
+          "name": "final lesson does not select a fabricated next lesson",
+          "pass": true
+        },
+        {
+          "name": "child-lesson order is retained",
+          "pass": true
+        },
+        {
+          "name": "in-flight website save guard prevents an extra transition",
+          "pass": true
+        }
+      ]
+    },
+    "syntax": true,
+    "syntaxFiles": [
+      "course-helper.user.js",
+      "src/build-adaptation.cjs",
+      "src/helper-panel.js",
+      "src/helper-tools.js",
+      "src/wisdom-study-controller.js",
+      "src/wisdom-study-runtime.js",
+      "tests/core.test.cjs",
+      "tests/wisdom-study.browser.js",
+      "tests/wisdom-navigation.test.cjs",
+      "verification/check-wisdom-native.cjs"
+    ],
+    "deterministicBuild": true,
+    "repeatedBuilds": 2,
+    "metadataIdentical": true,
+    "distributionModulesIdentical": true,
+    "preservedSourceFiles": [
+      "src/original.user.js",
+      "src/jcedutec-runtime.js",
+      "src/zhs-study.js",
+      "src/helper-coordinator.js"
+    ],
+    "noOcsRuntimeDependency": true,
+    "secretPatternScan": {
+      "passed": true,
+      "files": [
+        "course-helper.user.js",
+        "src/build-adaptation.cjs",
+        "src/helper-panel.js",
+        "src/helper-tools.js",
+        "src/wisdom-study-controller.js",
+        "src/wisdom-study-runtime.js",
+        "tests/core.test.cjs",
+        "tests/wisdom-study.browser.js",
+        "tests/wisdom-navigation.test.cjs",
+        "verification/check-wisdom-native.cjs",
+        "README.md",
+        "docs/更新说明-0.2.9.14.md",
+        "course-helper.meta.js"
+      ],
+      "scope": "Common API and GitHub credential literal patterns; not a comprehensive secret audit."
+    },
+    "diffCheck": true,
+    "fullScriptSmoke": {
+      "version": "0.2.9.14",
+      "beforeSave": "等待网站确认",
+      "afterSave": "播放中",
+      "beforeSaveNavigationCalls": 0,
+      "nativeNextCalls": 1,
+      "resumeCalls": 1,
+      "playerClicks": 0,
+      "submits": 0,
+      "progressRequests": 1,
+      "runtimeErrors": [],
+      "receiptTransport": "Isolated intercepted fetch response, no real learning-record request.",
+      "evidence": "Final browser smoke tool result; fixture used a unique isolated course identity to avoid prior-run dedup records."
+    },
+    "postSaveDelayRegression": {
+      "before": {
+        "total": 54,
+        "passed": 53,
+        "failed": 1
+      },
+      "failure": "native next must allow website save cleanup and action delay",
+      "after": {
+        "total": 54,
+        "passed": 54,
+        "failed": 0
+      }
+    },
+    "checksumManifest": {
+      "count": 114,
+      "manifest": "SHA256SUMS.txt",
+      "note": "Manifest excludes itself; hashes were verified after generation."
+    }
+  },
+  "limitations": [
+    "Browser media, model answers, website callbacks and progress receipts are simulated.",
+    "Original official functions ran in an isolated VM with mocked network and website state.",
+    "No real signed-in classroom acceptance or real userscript-manager end-to-end test was completed.",
+    "Website callback is an implementation detail and may change; missing or unmatched entry points stop navigation.",
+    "No execution-coverage percentage or undetectability claim."
+  ],
+  "files": {
+    "course-helper.user.js": "288AE984413E9A4EBFEA9A8A3A5BDDE2B1CCC8B06F5BC8C9839471BAEF643A64",
+    "course-helper.meta.js": "C3D18E7F94ACE11EC27F187593CAF10984CB7010F98547FD144175210BBC8046",
+    "src/wisdom-study-controller.js": "01E88EF9D05C6CF5361BA60BB57956E1D5FFD23753ADBE0AE29AF5D45B1B3EE1",
+    "src/wisdom-study-runtime.js": "5DB6AF3578083680F400E87FA1D8F09E7FEF47CB95BD60FA7752AEE07453A8F5",
+    "tests/wisdom-study.browser.js": "A92A10AC30A9394A44693BF754FA87E0A6B5B2A8B40A24A70AF6C813D5FE1AB0",
+    "tests/wisdom-navigation.test.cjs": "F746CBA83FEEE5E67E4F4953447154EF894D87CD451BDDE1CF584D8FC34CD833",
+    "verification/check-wisdom-native.cjs": "5C4DA401A32DDA542C46A33076D4390FD0E4C39C3D0663076A7118815FBC2378"
+  }
+}

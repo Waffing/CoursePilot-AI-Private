@@ -7,7 +7,7 @@ function replaceOnce(needle, replacement) {
   if (begin < 0 || source.indexOf(needle, begin + needle.length) >= 0) throw new Error('Ambiguous patch: ' + needle.slice(0, 100));
   source = source.slice(0, begin) + replacement + source.slice(begin + needle.length);
 }
-replaceOnce('// @version      0.2.8.2', '// @version      0.2.9.13');
+replaceOnce('// @version      0.2.8.2', '// @version      0.2.9.14');
 replaceOnce('// @author       isMobile', '// @author       Waffing');
 replaceOnce('// @description  支持多家大模型、自动获取模型列表和联网搜索，保留原版超星与智慧树的题目填写、视频、章节切换和提交机制。', '// @description  多平台网课小助手：视频学习、随堂和题库练习、大模型与图片答题，支持可选倍速、个性化界面、请求间隔与失败冷却、暂停恢复、单题重试和本页答案缓存。');
 replaceOnce("(function (vue, pinia, rxjs, md5, ElementPlus) {\n  'use strict';".replace(/\n/g, '\r\n'), "(function (vue, pinia, rxjs, md5, ElementPlus) {\n  'use strict';\n  const helperPage = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;\n  if (['bbgu.jcedutec.cn', 'wisdom-mooc.zhihuishu.com'].includes(helperPage.location.hostname) && helperPage.top === helperPage.self) {\n    if (helperPage.__courseHelperMount291) return;\n    helperPage.__courseHelperMount291 = true;\n  }");
@@ -23,7 +23,7 @@ replaceOnce('          unknown: {', `          wisdomStudy: {
               { name: "静音播放", value: false, type: "boolean" },
               { name: "AI随堂练习自动答题", value: true, type: "boolean" },
               { name: "核对选项后自动提交", value: true, type: "boolean" },
-              { name: "完成后提醒手动切课", value: true, type: "boolean" }
+              { name: "保存后自动下一视频", value: true, type: "boolean" }
             ] }]
           },
           jcedutec: {
@@ -61,8 +61,8 @@ replaceOnce('    const mergedConfig = mergeByLatestFields(defaultConfig, storedC
       if (old && !part.params.some((param) => param.name === "启用助手")) old.name = "启用助手";
     }
     for (const part of storedConfig?.platformParams?.wisdomStudy?.parts || []) {
-      const old = part.params?.find((param) => param.name === "完成后自动下一视频");
-      if (old && !part.params.some((param) => param.name === "完成后提醒手动切课")) old.name = "完成后提醒手动切课";
+      const old = part.params?.find((param) => ["完成后自动下一视频", "完成后提醒手动切课"].includes(param.name));
+      if (old && !part.params.some((param) => param.name === "保存后自动下一视频")) old.name = "保存后自动下一视频";
     }
     const mergedConfig = mergeByLatestFields(defaultConfig, storedConfig);
     if (!Object.prototype.hasOwnProperty.call(storedConfig?.helperPreferences || {}, "actionDelay")) {
@@ -97,7 +97,7 @@ replaceOnce('            }, 8, ["data"])', `            }, 8, ["data"]),
               page: selectedHistoryPage.value, pages: historyPages.value, total: _ctx.questionList.length,
               onSelect: (value) => historyPage.value = value
             }, null, 8, ["page", "pages", "total"])`);
-replaceOnce('// @version      0.2.9.13', '// @version      0.2.9.13\n// @downloadURL  https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js\n// @updateURL    https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.meta.js\n// @homepageURL  https://github.com/Waffing/CoursePilot-AI-Private\n// @supportURL   https://github.com/Waffing/CoursePilot-AI-Private/issues');
+replaceOnce('// @version      0.2.9.14', '// @version      0.2.9.14\n// @downloadURL  https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.user.js\n// @updateURL    https://raw.githubusercontent.com/Waffing/CoursePilot-AI-Private/main/course-helper.meta.js\n// @homepageURL  https://github.com/Waffing/CoursePilot-AI-Private\n// @supportURL   https://github.com/Waffing/CoursePilot-AI-Private/issues');
 replaceOnce('    const settings = cloneLatestValue(configStore.queryApis[0]);', '    const settings = cloneLatestValue(context.settings || configStore.queryApis[0]);');
 replaceOnce('    publicConfig.queryApis[0].token = "";', '    _GM_setValue("greasyfork-488083-helper-fallback-key", config2.helperFallbackModel?.token || "");\n    if (publicConfig.helperFallbackModel) publicConfig.helperFallbackModel.token = "";\n    publicConfig.queryApis[0].token = "";');
 replaceOnce('      globalConfig.modelSearch.token = _GM_getValue(SEARCH_API_KEY_STORAGE_KEY, "");', '      globalConfig.helperFallbackModel.token = _GM_getValue("greasyfork-488083-helper-fallback-key", "");\n      globalConfig.modelSearch.token = _GM_getValue(SEARCH_API_KEY_STORAGE_KEY, "");');
